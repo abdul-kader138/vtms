@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\CustomerGoogleAuthController;
 use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\Auth\StaffVerifyEmailController;
 use App\Http\Controllers\LocaleController;
+use App\Http\Controllers\TaxPaymentReceiptController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -92,3 +93,10 @@ Route::prefix('auth/google')->name('customer.auth.google.')->middleware('throttl
     Route::get('/redirect', [CustomerGoogleAuthController::class, 'redirect'])->name('redirect');
     Route::get('/callback', [CustomerGoogleAuthController::class, 'callback'])->name('callback');
 });
+
+// Receipts live on the private `local` disk, not `public` — this route is
+// the only way to read one back, gated by a signed/expiring URL (see
+// payment-table.blade.php) AND an authenticated staff session.
+Route::get('/customers/{customer}/tax/payments/{type}/{id}/receipt', TaxPaymentReceiptController::class)
+    ->middleware(['signed', 'auth'])
+    ->name('tax.payments.receipt.download');

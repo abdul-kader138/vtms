@@ -40,7 +40,7 @@ class AuthenticatedSessionController extends Controller
      * session/token is only established once the code verifies, via
      * TwoFactorChallengeController::store().
      *
-     * `device_id` is optional and only meaningful for a learner account
+     * `device_id` is optional and only meaningful for a customer account
      * (see App\Services\DeviceLockService) — a native app should send a
      * stable OS-level device identifier (NOT the MAC address; no client can
      * read that). Omitting it (the existing web SPA doesn't send one)
@@ -49,7 +49,7 @@ class AuthenticatedSessionController extends Controller
     #[OA\Post(
         path: '/api/v1/auth/login',
         summary: 'Log in',
-        description: "Establishes a session cookie AND returns a Sanctum bearer token — use whichever suits the client. If the account has 2FA enabled, returns a `challenge_token` instead — see `POST /auth/login/challenge`. `device_id` is optional; a learner account sending one locks to that device (see `POST /auth/logout` and the admin 'Reset device' action for how to clear it).",
+        description: "Establishes a session cookie AND returns a Sanctum bearer token — use whichever suits the client. If the account has 2FA enabled, returns a `challenge_token` instead — see `POST /auth/login/challenge`. `device_id` is optional; a customer account sending one locks to that device (see `POST /auth/logout` and the admin 'Reset device' action for how to clear it).",
         security: [['csrfToken' => []]],
         tags: ['Auth'],
         requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(

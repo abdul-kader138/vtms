@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
  * country for an admin to look at.
  *
  * Uses ip-api.com's free endpoint: no API key, no setup required. Trade-off
- * worth knowing: learner IP addresses are sent to that third-party service
+ * worth knowing: customer IP addresses are sent to that third-party service
  * for this lookup. Swap this class for a local MaxMind GeoLite2 database
  * lookup instead if that's not acceptable — nothing else in the app depends
  * on which one is used, only ::country() does.

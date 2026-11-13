@@ -12,7 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Runs after every successful learner login (see
+ * Runs after every successful customer login (see
  * App\Services\DeviceLockService) — off the request/response path, so a
  * slow or failed geolocation lookup never delays or breaks a login.
  *

@@ -13,6 +13,9 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             ShieldSeeder::class,
+            TaxSettingsSeeder::class,
+            InpsRateSlabSeeder::class,
+            DirittoAnnualeBracketSeeder::class,
         ]);
     }
 }

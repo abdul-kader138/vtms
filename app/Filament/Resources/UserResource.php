@@ -266,7 +266,7 @@ class UserResource extends Resource
                     ->preload(),
                 TernaryFilter::make('device_locked')
                     ->label(__('Device lock'))
-                    ->placeholder(__('All learners'))
+                    ->placeholder(__('All users'))
                     ->trueLabel(__('Locked to a device'))
                     ->falseLabel(__('Not locked'))
                     ->queries(

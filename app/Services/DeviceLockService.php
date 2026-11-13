@@ -11,7 +11,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Hard device lock for learner accounts: the first device a learner logs
+ * Hard device lock for customer accounts: the first device a customer logs
  * in from is remembered (by a client-supplied identifier, not a real MAC
  * address — no client, web or native, can ever read that), and a login
  * attempt from any other device is refused outright rather than allowed

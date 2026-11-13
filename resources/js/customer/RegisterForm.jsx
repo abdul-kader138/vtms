@@ -121,7 +121,7 @@ export default function RegisterForm({ siteKey, phoneCountries, defaultPhoneCoun
                     checked={form.marketing_opt_in}
                     onChange={(e) => update('marketing_opt_in', e.target.checked)}
                 />
-                <span>{t('Send me course updates and offers')}</span>
+                <span>{t('Send me updates and offers')}</span>
             </label>
 
             <TurnstileWidget key={turnstileKey} siteKey={siteKey} onVerify={setTurnstileToken} onExpire={() => setTurnstileToken('')} />

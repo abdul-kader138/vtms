@@ -8,10 +8,10 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
- * Sent by App\Services\DeviceLockService whenever a learner's account locks
+ * Sent by App\Services\DeviceLockService whenever a customer's account locks
  * to a (new) device — the first-ever login, or the first login after an
- * admin resets it. A security notice like PasswordChanged, not a marketing
- * update, so it ignores the lms_email_notifications preference.
+ * admin resets it. A security notice like PasswordChanged, always sent
+ * regardless of any notification-preference opt-outs.
  */
 class DeviceLocked extends Notification implements ShouldQueue
 {
