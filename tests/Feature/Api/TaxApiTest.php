@@ -11,6 +11,7 @@ use App\Services\Tax\TaxCalculationOrchestrator;
 use Database\Seeders\InpsRateSlabSeeder;
 use Database\Seeders\TaxSettingsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -122,6 +123,53 @@ class TaxApiTest extends TestCase
         $this->actingAs($user)->getJson('/api/v1/tax/2025')->assertForbidden();
     }
 
+    public function test_customer_can_report_a_payment_with_a_receipt(): void
+    {
+        Storage::fake('local');
+        app(TaxCalculationOrchestrator::class)->runForCustomerAndYear($this->customer, 2025);
+        $payment = TaxPayment::where('customer_id', $this->customer->id)->where('payment_type', TaxPaymentType::Balance)->firstOrFail();
+
+        $response = $this->actingAs($this->user)->post("/api/v1/tax/payments/tax/{$payment->id}/report-paid", [
+            'paid_date' => '2025-06-30',
+            'paid_amount' => '100.50',
+            'receipt' => UploadedFile::fake()->create('receipt.pdf', 10, 'application/pdf'),
+        ]);
+
+        $response->assertOk()->assertJsonPath('payment.reported_paid_amount', 100.5);
+        $payment->refresh();
+        $this->assertNotNull($payment->reported_paid_at);
+        $this->assertSame('2025-06-30', $payment->reported_paid_date->toDateString());
+        Storage::disk('local')->assertExists($payment->uploaded_pdf);
+    }
+
+    public function test_f24_download_only_accepts_an_open_deadline_of_the_users_customer(): void
+    {
+        app(TaxCalculationOrchestrator::class)->runForCustomerAndYear($this->customer, 2025);
+        $payment = TaxPayment::where('customer_id', $this->customer->id)->where('payment_type', TaxPaymentType::Balance)->firstOrFail();
+
+        $this->actingAs($this->user)->get('/api/v1/tax/f24/'.$payment->due_date->toDateString())
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+        $this->actingAs($this->user)->get('/api/v1/tax/f24/2099-12-31')->assertNotFound();
+
+        $other = Customer::create(['name' => 'Someone Else', 'customer_type' => 'artigiani', 'coefficient_of_profitability' => 67, 'tax_rate' => 5]);
+        $intruder = User::factory()->create(['customer_id' => $other->id]);
+        $this->actingAs($intruder)->get('/api/v1/tax/f24/'.$payment->due_date->toDateString())->assertNotFound();
+    }
+
+    public function test_customer_calendar_feed_and_reset_replace_the_old_secret(): void
+    {
+        $calendar = $this->actingAs($this->user)->getJson('/api/v1/tax/calendar')->assertOk()->json();
+        $oldUrl = $calendar['url'];
+
+        $this->get($oldUrl)->assertOk()->assertHeader('content-type', 'text/calendar; charset=utf-8');
+        $reset = $this->actingAs($this->user)->postJson('/api/v1/tax/calendar/reset')->assertOk()->json();
+
+        $this->assertNotSame($oldUrl, $reset['url']);
+        $this->get($oldUrl)->assertNotFound();
+        $this->get($reset['url'])->assertOk()->assertSee('BEGIN:VCALENDAR');
+    }
+
     public function test_payments_carry_f24_codes_and_rule_details(): void
     {
         app(TaxCalculationOrchestrator::class)->runForCustomerAndYear($this->customer, 2025);
@@ -156,7 +204,7 @@ class TaxApiTest extends TestCase
     public function test_italian_shell_embeds_the_translation_catalog(): void
     {
         $this->withSession(['locale' => 'it'])->get('/app/tax')->assertOk()->assertSee('Scadenzario pagamenti', false);
-        $this->withSession(['locale' => 'bn'])->get('/app/login')->assertOk(); // no bn catalog — must not crash
+        $this->withSession(['locale' => 'bn'])->get('/login')->assertOk(); // no bn catalog — must not crash
     }
 
     public function test_customer_dashboard_shell_renders(): void

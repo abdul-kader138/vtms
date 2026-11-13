@@ -72,7 +72,11 @@ class TwoFactorChallengeController extends Controller
         $deviceLock->enforce($user, $payload['device_id'] ?? null, 'code');
 
         Auth::guard('web')->login($user, $payload['remember']);
-        $request->session()->regenerate();
+        // Token-only clients (mobile, or a host not trusted for cookies)
+        // have no session: they get the bearer token instead of a 500.
+        if ($request->hasSession()) {
+            $request->session()->regenerate();
+        }
 
         $apiToken = $user->createToken('mobile')->plainTextToken;
 

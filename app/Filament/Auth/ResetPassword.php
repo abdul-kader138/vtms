@@ -15,8 +15,6 @@ use Filament\Pages\Auth\PasswordReset\ResetPassword as BaseResetPassword;
  */
 class ResetPassword extends BaseResetPassword
 {
-    protected static string $layout = 'filament.auth.metro-layout';
-
     protected function getPasswordFormComponent(): Component
     {
         return parent::getPasswordFormComponent()

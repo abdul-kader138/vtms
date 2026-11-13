@@ -26,6 +26,7 @@ class CustomerResource extends JsonResource
             'tax_id' => $this->tax_id,
             'address' => $this->address,
             'marketing_opt_in' => $this->marketing_opt_in,
+            'tax_reminders_enabled' => (bool) ($this->tax_reminders_enabled ?? true),
             'locale' => $this->locale,
             'email_verified' => $this->hasVerifiedEmail(),
             'two_factor_enabled' => $this->hasEnabledTwoFactorAuthentication(),

@@ -43,6 +43,63 @@ export async function postJson(path, body) {
     return data;
 }
 
+async function sendMultipart(path, method, form) {
+    await ensureCsrfCookie();
+
+    const response = await fetch(path, {
+        method,
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json',
+            'Accept-Language': locale,
+            'X-XSRF-TOKEN': readCookie('XSRF-TOKEN'),
+        },
+        body: form,
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        const error = new Error(data.message || t('Request failed.'));
+        error.status = response.status;
+        error.errors = data.errors || {};
+        throw error;
+    }
+
+    return data;
+}
+
+export function postMultipart(path, form) {
+    return sendMultipart(path, 'POST', form);
+}
+
+export async function putJson(path, body) {
+    await ensureCsrfCookie();
+
+    const response = await fetch(path, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'Accept-Language': locale,
+            'X-XSRF-TOKEN': readCookie('XSRF-TOKEN'),
+        },
+        body: JSON.stringify(body),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        const error = new Error(data.message || t('Request failed.'));
+        error.status = response.status;
+        error.errors = data.errors || {};
+        throw error;
+    }
+
+    return data;
+}
+
 export async function getJson(path) {
     const response = await fetch(path, {
         credentials: 'include',

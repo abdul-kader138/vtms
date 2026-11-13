@@ -6,8 +6,11 @@ use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\Auth\ResendVerificationController;
 use App\Http\Controllers\Auth\StaffVerifyEmailController;
 use App\Http\Controllers\F24SheetController;
+use App\Http\Controllers\IncomeImportSampleController;
 use App\Http\Controllers\LocaleController;
+use App\Http\Controllers\TaxCalendarFeedController;
 use App\Http\Controllers\TaxPaymentReceiptController;
+use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -19,16 +22,52 @@ Route::get('/admin/email/verify/{id}/{hash}', StaffVerifyEmailController::class)
     ->middleware(['signed', 'throttle:6,1'])
     ->name('staff.verification.verify');
 
+// Two separate sign-ins, each with its own dashboard:
+//  - staff:     /panel/login → /panel (Filament admin panel)
+//  - customers: /login, /register → /app/tax (React portal)
+// Signing in on the other one still works and lands on your own dashboard
+// (see App\Filament\Auth\LoginResponse and the redirects below).
+Route::get('/', function (Request $request) {
+    $user = $request->user();
+
+    return match (true) {
+        $user === null => redirect()->route('customer.login'),
+        $user->isStaff() => redirect()->to(Filament::getPanel('admin')->getUrl()),
+        default => redirect()->route('customer.tax'),
+    };
+})->name('home');
+
 // Customer-facing React auth screens — a thin Blade shell that mounts
 // resources/js/customer-auth.jsx, which talks to the existing
 // /api/v1/auth/* endpoints over the Sanctum SPA session.
-Route::get('/app/login', fn () => view('customer.auth', ['mode' => 'login']))->name('customer.login');
-Route::get('/app/register', fn () => view('customer.auth', ['mode' => 'register']))->name('customer.register');
+Route::get('/login', fn () => view('customer.auth', ['mode' => 'login']))->name('customer.login');
+Route::get('/register', fn () => view('customer.auth', ['mode' => 'register']))->name('customer.register');
+// Earlier addresses, still in bookmarks and sent emails.
+Route::permanentRedirect('/app/login', '/login');
+Route::permanentRedirect('/app/register', '/register');
+
+// Personal deadlines calendar (iCal) — secret-token URL, no session; the
+// customer copies it from the account page into their calendar app.
+Route::get('/calendar/{token}.ics', TaxCalendarFeedController::class)
+    ->middleware('throttle:60,1')
+    ->name('tax.calendar-feed');
+
+// Customer account page — same React shell as the portal.
+Route::get('/app/account', fn () => view('customer.tax', ['view' => 'account']))->name('customer.account');
 
 // Customer tax dashboard — Blade shell for resources/js/customer-tax.jsx.
 // Auth is enforced by the /api/v1/tax/* endpoints it calls (a 401 there
 // sends the browser to /app/login), same as the auth screens above.
-Route::get('/app/tax', fn () => view('customer.tax'))->name('customer.tax');
+Route::get('/app/tax', function (Request $request) {
+    // Staff have their own dashboard; a staff account with no customer
+    // record linked would only see "not linked" here.
+    $user = $request->user();
+    if ($user?->isStaff() && $user->customer_id === null) {
+        return redirect()->to(Filament::getPanel('admin')->getUrl());
+    }
+
+    return view('customer.tax');
+})->name('customer.tax');
 
 // Lands here with ?token=&email= in the query string — see
 // App\Notifications\Auth\ResetPassword::resetUrl(), which builds exactly
@@ -111,6 +150,13 @@ Route::get('/customers/{customer}/tax/payments/{type}/{id}/receipt', TaxPaymentR
 Route::get('/customers/{customer}/tax/{year}/annual-report', AnnualTaxReportController::class)
     ->middleware(['signed', 'auth'])
     ->name('tax.annual-report.download');
+
+// Sample files for the income importer (invoices list / cash register as
+// CSV or Excel, an e-invoice XML) — staff only.
+Route::get('/tax/import-samples/{format}.{ext}', IncomeImportSampleController::class)
+    ->middleware('auth')
+    ->where(['format' => 'invoices|cash-register|e-invoice', 'ext' => 'csv|xlsx|xml'])
+    ->name('tax.import-sample');
 
 // F24 payment sheet for one customer and deadline (pay_on in the signed query).
 Route::get('/customers/{customer}/tax/f24/{date}', F24SheetController::class)

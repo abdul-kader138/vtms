@@ -30,18 +30,18 @@ class TaxRoutesHttpSmokeTest extends TestCase
 
         $this->actingAs($admin);
 
-        $this->get('/customers')->assertOk();
-        $this->get('/customers/create')->assertOk();
-        $this->get("/customers/{$customer->id}/edit")->assertOk();
-        $this->get("/customers/{$customer->id}/tax/2025")->assertOk();
-        $this->get("/customers/{$customer->id}/tax/historical")->assertOk();
-        $this->get('/inps-rate-slabs')->assertOk();
-        $this->get('/diritto-annuale-brackets')->assertOk();
-        $this->get('/tax-settings')->assertOk();
+        $this->get('/panel/customers')->assertOk();
+        $this->get('/panel/customers/create')->assertOk();
+        $this->get("/panel/customers/{$customer->id}/edit")->assertOk();
+        $this->get("/panel/customers/{$customer->id}/tax/2025")->assertOk();
+        $this->get("/panel/customers/{$customer->id}/tax/historical")->assertOk();
+        $this->get('/panel/inps-rate-slabs')->assertOk();
+        $this->get('/panel/diritto-annuale-brackets')->assertOk();
+        $this->get('/panel/tax-settings')->assertOk();
     }
 
     public function test_guest_is_redirected_not_shown_an_error(): void
     {
-        $this->get('/tax-settings')->assertRedirect();
+        $this->get('/panel/tax-settings')->assertRedirect();
     }
 }

@@ -17,6 +17,7 @@ class TaxPayment extends Model
     protected $fillable = [
         'customer_id', 'tax_calculation_id', 'payment_type', 'tax_year',
         'status', 'amount', 'paid_amount', 'paid_date', 'uploaded_pdf', 'due_date',
+        'reported_paid_at', 'reported_paid_date', 'reported_paid_amount',
     ];
 
     protected function casts(): array
@@ -27,6 +28,9 @@ class TaxPayment extends Model
             'amount' => 'decimal:2',
             'paid_amount' => 'decimal:2',
             'paid_date' => 'date',
+            'reported_paid_at' => 'datetime',
+            'reported_paid_date' => 'date',
+            'reported_paid_amount' => 'decimal:2',
             'due_date' => 'date',
         ];
     }

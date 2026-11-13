@@ -17,7 +17,7 @@ export default function AuthPage({ initialMode, siteKey, googleUrl, phoneCountri
     function go(next) {
         setMode(next);
         // Keep the address bar honest so a refresh or a shared link opens the same tab.
-        const path = next === 'register' ? '/app/register' : '/app/login';
+        const path = next === 'register' ? '/register' : '/login';
         if (next !== 'forgot' && window.location.pathname !== path) {
             window.history.replaceState(null, '', path);
         }

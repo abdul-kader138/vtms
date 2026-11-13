@@ -2,7 +2,7 @@
   "scope": "customer",
   "source": "resources/css/customer.css",
   "color": {
-    "line": "#007a37", "lineStrong": "#00652d", "lineTint": "#e5f2e9", "lineTint2": "#cce6d5",
+    "line": "#0057a8", "lineStrong": "#00468a", "lineTint": "#e6effa", "lineTint2": "#c9dcf2",
     "ink": "#15191b", "ink2": "#454d51", "ink3": "#657074",
     "ground": "#ffffff", "ground2": "#f2f4f1", "rule": "#dde2dd", "ruleStrong": "#b9c1bb",
     "overdue": "#c41e2e", "overdueInk": "#a3121f", "overdueTint": "#fcebec",

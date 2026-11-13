@@ -12,9 +12,9 @@ The tax year is a metro line; each payment is a station. The world comes from Bo
 
 | Token | Value | Job |
 |---|---|---|
-| `--line` | #007a37 | Bands, the line, primary buttons, focus ring, current position |
-| `--line-strong` | #00652d | Green text/links on white (AA) |
-| `--line-tint` / `-2` | #e5f2e9 / #cce6d5 | Success notices, selection, focus halo |
+| `--line` | #0057a8 (Metro blue) | Bands, the line, primary buttons, focus ring, current position |
+| `--line-strong` | #00468a | Line-colour text/links on white (AA) |
+| `--line-tint` / `-2` | #e6effa / #c9dcf2 | Success notices, selection, focus halo |
 | `--ink` / `-2` / `-3` | #15191b / #454d51 / #657074 | Text, secondary, muted (all ≥4.5:1) |
 | `--ground` / `--ground-2` | #fff / #f2f4f1 | Page / second neutral layer (panels, hover) |
 | `--rule` / `--rule-strong` | #dde2dd / #b9c1bb | Dividers / input borders |

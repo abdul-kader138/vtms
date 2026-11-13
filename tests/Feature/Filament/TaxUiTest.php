@@ -55,7 +55,7 @@ class TaxUiTest extends TestCase
 
     public function test_home_dashboard_and_widgets_render_with_data(): void
     {
-        $this->get('/')->assertOk();
+        $this->get('/panel')->assertOk();
 
         Livewire::test(TaxStatsOverview::class)->assertOk()->assertSee('Overdue')->assertSee('Due in the next 30 days');
         Livewire::test(UpcomingDeadlines::class)->assertOk()->assertSee('Ui Srl');

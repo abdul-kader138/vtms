@@ -46,7 +46,6 @@ class RegisteredUserController extends Controller
      * response carries the created customer with `email_verified: false` so
      * the SPA can send the user straight to a "verify your email" screen;
      * the verification link works with no session (see routes/api.php).
-     *
      */
     public function store(RegisterRequest $request): JsonResponse
     {
@@ -60,6 +59,7 @@ class RegisteredUserController extends Controller
             'marketing_opt_in' => $data['marketing_opt_in'] ?? false,
             'password' => $data['password'],
         ]);
+        $user->markAsCustomer();
 
         $user->sendEmailVerificationNotification();
 

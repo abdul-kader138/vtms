@@ -53,7 +53,7 @@ class DeviceLockService
             return;
         }
 
-        if ($user->isStaff()) {
+        if ($user->isStaff() || $user->device_lock_exempt) {
             return;
         }
 

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getJson, postJson } from './api';
+import { getJson, postJson, postMultipart } from './api';
 import { locale, t } from './i18n';
 import { Icon, Notice } from './ui';
+import AccountPage from './AccountPage';
 
 const LANGUAGES = [['it', 'IT'], ['en', 'EN']];
 const SOON_DAYS = 14;
@@ -39,7 +40,7 @@ const KIND = {
 function Band({ appName, logo, title, years, year, onYear, loading }) {
     async function logout() {
         await postJson('/api/v1/auth/logout', {}).catch(() => {});
-        window.location.assign('/app/login');
+        window.location.assign('/login');
     }
 
     async function switchLanguage(code) {
@@ -179,12 +180,40 @@ function NextStop({ stops, summary, year }) {
 
 const STATE_LABEL = { paid: 'Paid', overdue: 'Overdue', pending: 'Upcoming', cancelled: 'Cancelled' };
 
-function Stop({ stop, isNext }) {
+function Stop({ stop, isNext, onReported }) {
     const [open, setOpen] = useState(false);
+    const [reporting, setReporting] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [reportError, setReportError] = useState(null);
+    const [file, setFile] = useState(null);
+    const [paidDate, setPaidDate] = useState(todayIso());
+    const [paidAmount, setPaidAmount] = useState(String(stop.outstanding ?? ''));
     const status = stop.effective_status;
     const days = daysUntil(stop.due_date);
     const soon = status === 'pending' && days <= SOON_DAYS;
     const partly = stop.paid_amount > 0 && stop.outstanding > 0;
+    const canAct = status === 'pending' || status === 'overdue';
+    const todayCost = stop.late?.total ?? stop.outstanding;
+
+    async function reportPaid(event) {
+        event.preventDefault();
+        setBusy(true);
+        setReportError(null);
+
+        try {
+            const form = new FormData();
+            form.append('paid_date', paidDate);
+            form.append('paid_amount', paidAmount);
+            form.append('receipt', file);
+            await postMultipart(`/api/v1/tax/payments/${stop.type}/${stop.id}/report-paid`, form);
+            setReporting(false);
+            onReported();
+        } catch (error) {
+            setReportError(error.errors?.receipt?.[0] ?? error.message);
+        } finally {
+            setBusy(false);
+        }
+    }
 
     return (
         <li className={`c-stop c-stop--${status}${isNext ? ' c-stop--next' : ''}`} data-open={open}>
@@ -220,14 +249,29 @@ function Stop({ stop, isNext }) {
                         {stop.paid_amount > 0 && <><dt>{t('Paid')}</dt><dd>{eur(stop.paid_amount)}{stop.paid_date ? ` · ${day(stop.paid_date)}` : ''}</dd></>}
                         {stop.outstanding > 0 && status !== 'cancelled' && <><dt>{t('Left to pay')}</dt><dd>{eur(stop.outstanding)}</dd></>}
                         {stop.receipt_url && <><dt>{t('Receipt')}</dt><dd><a href={stop.receipt_url}>{t('Download')}</a></dd></>}
+                        {canAct && <><dt>{t('Cost if paid today')}</dt><dd className={status === 'overdue' ? 'c-detail-overdue' : ''}>{eur(todayCost)}{stop.late && <small className="c-detail-note">{t('includes :amount in interest and penalty', { amount: eur((Number(stop.late.interest) || 0) + (Number(stop.late.penalty) || 0)) })}</small>}</dd></>}
                     </dl>
+                    {canAct && <div className="c-stop-actions">
+                        <a className="c-btn c-btn--small" href={`${stop.f24_sheet_url}?pay_on=${todayIso()}`} target="_blank" rel="noreferrer"><Icon name="file" />{t('Download F24')}</a>
+                        {!stop.reported_paid_at && <button type="button" className="c-btn c-btn--quiet c-btn--small" onClick={() => setReporting((value) => !value)}>{t("I've paid")}</button>}
+                    </div>}
+                    {stop.reported_paid_at && <Notice type="info">{t('Receipt sent on :date. Your accountant will confirm the payment.', { date: day(stop.reported_paid_date) })}</Notice>}
+                    {reporting && <form className="c-paid-form" onSubmit={reportPaid}>
+                        <div className="c-row">
+                            <label className="c-field"><span>{t('Paid on')}</span><input type="date" value={paidDate} max={todayIso()} onChange={(event) => setPaidDate(event.target.value)} required /></label>
+                            <label className="c-field"><span>{t('Amount paid')}</span><input type="number" min="0.01" step="0.01" value={paidAmount} onChange={(event) => setPaidAmount(event.target.value)} required /></label>
+                        </div>
+                        <label className="c-field"><span>{t('Receipt PDF or image')}</span><input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required /></label>
+                        {reportError && <Notice type="error">{reportError}</Notice>}
+                        <button type="submit" className="c-btn c-btn--small" disabled={busy || !file}>{busy ? t('Sending…') : t('Send receipt')}</button>
+                    </form>}
                 </div>
             </div>
         </li>
     );
 }
 
-function Line({ stops, year, nextKey }) {
+function Line({ stops, year, nextKey, onReported }) {
     if (stops.length === 0) {
         return <p className="c-empty">{t('No payments are scheduled for :year yet. They appear here once your accountant calculates the year.', { year })}</p>;
     }
@@ -246,7 +290,7 @@ function Line({ stops, year, nextKey }) {
         if (i === marker) {
             items.push(<Today key="today" />);
         }
-        items.push(<Stop key={`${stop.type}-${stop.id}`} stop={stop} isNext={`${stop.type}-${stop.id}` === nextKey} />);
+        items.push(<Stop key={`${stop.type}-${stop.id}`} stop={stop} isNext={`${stop.type}-${stop.id}` === nextKey} onReported={onReported} />);
     });
     if (marker === stops.length) {
         items.push(<Today key="today" />);
@@ -458,7 +502,7 @@ function Skeleton({ appName, logo }) {
     );
 }
 
-export default function TaxDashboard({ appName, logo }) {
+export default function TaxDashboard({ appName, logo, view = 'tax' }) {
     const [meta, setMeta] = useState(null);
     const [year, setYear] = useState(null);
     const [data, setData] = useState(null);
@@ -467,13 +511,16 @@ export default function TaxDashboard({ appName, logo }) {
 
     function handleError(err) {
         if (err.status === 401) {
-            window.location.assign('/app/login');
+            window.location.assign('/login');
             return;
         }
         setError(err);
     }
 
     useEffect(() => {
+        if (view === 'account') {
+            return;
+        }
         getJson('/api/v1/tax/years')
             .then((result) => {
                 setMeta(result);
@@ -486,6 +533,9 @@ export default function TaxDashboard({ appName, logo }) {
     }, []);
 
     useEffect(() => {
+        if (view === 'account') {
+            return;
+        }
         if (year === null) {
             return;
         }
@@ -498,6 +548,10 @@ export default function TaxDashboard({ appName, logo }) {
             .catch(handleError)
             .finally(() => setLoading(false));
     }, [year]);
+
+    if (view === 'account') {
+        return <AccountPage appName={appName} logo={logo} />;
+    }
 
     // The line runs in date order, like the stations on a map.
     const stops = useMemo(() => (data ? [...data.payments].sort((a, b) => a.due_date.localeCompare(b.due_date)) : []), [data]);
@@ -561,7 +615,7 @@ export default function TaxDashboard({ appName, logo }) {
                             <h2 id="line-heading">{t('Payments :year', { year: data.year })}</h2>
                             <p>{t('Tap a stop for details')}</p>
                         </div>
-                        <Line stops={stops} year={data.year} nextKey={nextKey} />
+                            <Line stops={stops} year={data.year} nextKey={nextKey} onReported={() => getJson(`/api/v1/tax/${year}`).then(setData)} />
                     </section>
 
                     <div className="c-aside">

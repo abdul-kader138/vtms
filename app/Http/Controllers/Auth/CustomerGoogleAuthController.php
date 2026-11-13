@@ -50,6 +50,7 @@ class CustomerGoogleAuthController extends Controller
         }
 
         $user = $this->linkOrCreateGoogleUser($googleUser);
+        $user->markAsCustomer();
 
         Auth::guard('web')->login($user);
         request()->session()->regenerate();

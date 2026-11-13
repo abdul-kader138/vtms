@@ -49,7 +49,7 @@ export default function ResetPasswordForm() {
                     <h2>{t('This link is incomplete')}</h2>
                     <p className="c-sub">{t('This password reset link is missing its token. Please request a new one.')}</p>
                 </div>
-                <a className="c-btn c-btn--block" href="/app/login">{t('Back to sign in')}</a>
+                <a className="c-btn c-btn--block" href="/login">{t('Back to sign in')}</a>
             </>
         );
     }
@@ -62,7 +62,7 @@ export default function ResetPasswordForm() {
                     <h2>{t('Password changed')}</h2>
                     <p className="c-sub">{status.message}</p>
                 </div>
-                <a className="c-btn c-btn--block" href="/app/login">{t('Go to sign in')}</a>
+                <a className="c-btn c-btn--block" href="/login">{t('Go to sign in')}</a>
             </>
         );
     }

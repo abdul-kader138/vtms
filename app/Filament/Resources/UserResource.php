@@ -158,8 +158,13 @@ class UserResource extends Resource
                         ->relationship('customer', 'name')
                         ->searchable()
                         ->preload()
-                        ->placeholder(__('Not linked')),
-                ]),
+                        ->placeholder(__('Not linked'))
+                        ->helperText(__('A linked login with no staff role gets the "customer" role automatically.')),
+                    Toggle::make('device_lock_exempt')
+                        ->label(__('Exempt from device lock'))
+                        ->helperText(__('This customer can sign in from any device, even while "Lock customer accounts to one device" is on in System Settings.'))
+                        ->inline(false),
+                ])->columns(2),
 
             Section::make(__('Roles'))
                 ->description(__('What this user can access in the admin panel.'))

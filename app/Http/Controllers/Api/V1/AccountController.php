@@ -67,6 +67,7 @@ class AccountController extends Controller
             'tax_id' => ['sometimes', 'nullable', 'string', 'max:100'],
             'address' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'marketing_opt_in' => ['sometimes', 'boolean'],
+            'tax_reminders_enabled' => ['sometimes', 'boolean'],
             'email' => [
                 'sometimes', 'required', 'string', 'email', 'max:255',
                 Rule::unique('users', 'email')->ignore($request->user()->id),

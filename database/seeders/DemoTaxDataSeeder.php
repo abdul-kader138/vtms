@@ -119,7 +119,7 @@ class DemoTaxDataSeeder extends Seeder
         Artisan::call('tax:mark-overdue');
 
         foreach ([[$artigiano, 'Luca', 'Ferri'], [$commerciante, 'Giulia', 'Conti'], [$professionista, 'Marco', 'Marino']] as [$customer, $first, $last]) {
-            User::firstOrCreate(
+            $demoUser = User::firstOrCreate(
                 ['email' => 'demo.'.strtolower($last).'@example.com'],
                 [
                     'first_name' => $first,
@@ -129,6 +129,7 @@ class DemoTaxDataSeeder extends Seeder
                     'customer_id' => $customer->id,
                 ]
             );
+            $demoUser->markAsCustomer();
         }
 
         $this->command?->info('Demo tax data seeded.');

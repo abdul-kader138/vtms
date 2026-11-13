@@ -15,6 +15,7 @@
         id="customer-tax-root"
         data-app-name="{{ \App\Models\Setting::get('app_name', 'VTMS') }}"
         data-logo="{{ $logo }}"
+        data-view="{{ $view ?? 'tax' }}"
         data-translations="{{ json_encode($translations) }}"
     ></div>
 </body>

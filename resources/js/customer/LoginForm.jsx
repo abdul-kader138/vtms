@@ -54,7 +54,7 @@ export default function LoginForm({ siteKey, googleUrl, onForgot }) {
                 return;
             }
 
-            window.location.assign('/app/tax');
+            window.location.assign('/');
         } catch (error) {
             failed(error);
             // Tokens are single-use, so a rejected submit needs a fresh challenge.
@@ -72,7 +72,7 @@ export default function LoginForm({ siteKey, googleUrl, onForgot }) {
 
         try {
             await postJson('/api/v1/auth/login/challenge', { challenge_token: challenge, code });
-            window.location.assign('/app/tax');
+            window.location.assign('/');
         } catch (error) {
             failed(error);
             if (error.errors?.challenge_token) {

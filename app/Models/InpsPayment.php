@@ -17,6 +17,7 @@ class InpsPayment extends Model
         'customer_id', 'inps_calculation_id', 'installment_number', 'payment_year',
         'payment_method', 'payment_reference', 'notes',
         'status', 'amount', 'paid_amount', 'paid_date', 'uploaded_pdf', 'due_date',
+        'reported_paid_at', 'reported_paid_date', 'reported_paid_amount',
     ];
 
     protected function casts(): array
@@ -26,6 +27,9 @@ class InpsPayment extends Model
             'amount' => 'decimal:2',
             'paid_amount' => 'decimal:2',
             'paid_date' => 'date',
+            'reported_paid_at' => 'datetime',
+            'reported_paid_date' => 'date',
+            'reported_paid_amount' => 'decimal:2',
             'due_date' => 'date',
         ];
     }

@@ -20,16 +20,21 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['customer_id', 'first_name', 'last_name', 'email', 'phone', 'tax_id', 'address', 'marketing_opt_in', 'password', 'avatar', 'google_id', 'email_verified_at', 'locale'])]
+#[Fillable(['customer_id', 'device_lock_exempt', 'tax_reminders_enabled', 'first_name', 'last_name', 'email', 'phone', 'tax_id', 'address', 'marketing_opt_in', 'password', 'avatar', 'google_id', 'email_verified_at', 'locale'])]
 #[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
 class User extends Authenticatable implements FilamentUser, HasAvatar, HasLocalePreference, HasName, MustVerifyEmail
 {
     public const SUPPORTED_LOCALES = ['en', 'it', 'bn'];
+
+    /** Portal accounts: no permissions, never the admin panel. */
+    public const CUSTOMER_ROLE = 'customer';
 
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, HasRoles, LogsActivity, Notifiable;
@@ -74,6 +79,8 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasLocale
     protected function casts(): array
     {
         return [
+            'device_lock_exempt' => 'boolean',
+            'tax_reminders_enabled' => 'boolean',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'marketing_opt_in' => 'boolean',
@@ -118,8 +125,35 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasLocale
      */
     public function isStaff(): bool
     {
+        // A customer account never becomes staff by accident, even if a
+        // permission is later attached to the customer role.
         return $this->hasAnyRole(['super_admin', 'panel_user'])
-            || $this->getAllPermissions()->isNotEmpty();
+            || (! $this->hasRole(self::CUSTOMER_ROLE) && $this->getAllPermissions()->isNotEmpty());
+    }
+
+    public function isCustomer(): bool
+    {
+        return $this->hasRole(self::CUSTOMER_ROLE) || $this->customer_id !== null;
+    }
+
+    /** Secret for the personal deadlines calendar feed; created on first use. */
+    public function calendarToken(bool $reset = false): string
+    {
+        if ($reset || blank($this->calendar_token)) {
+            $this->forceFill(['calendar_token' => Str::random(48)])->save();
+        }
+
+        return $this->calendar_token;
+    }
+
+    /** Give a portal account the customer role (never to staff). */
+    public function markAsCustomer(): void
+    {
+        if ($this->isStaff() || $this->hasRole(self::CUSTOMER_ROLE)) {
+            return;
+        }
+
+        $this->assignRole(Role::findOrCreate(self::CUSTOMER_ROLE, 'web'));
     }
 
     public function hasEnabledTwoFactorAuthentication(): bool

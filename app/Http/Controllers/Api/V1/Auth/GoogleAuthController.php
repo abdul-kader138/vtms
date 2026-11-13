@@ -63,11 +63,16 @@ class GoogleAuthController extends Controller
         }
 
         $user = $this->linkOrCreateGoogleUser($googleUser);
+        $user->markAsCustomer();
 
         $deviceLock->enforce($user, $request->input('device_id'), 'access_token');
 
         Auth::guard('web')->login($user, (bool) $request->boolean('remember'));
-        $request->session()->regenerate();
+        // Token-only clients (mobile, or a host not trusted for cookies)
+        // have no session: they get the bearer token instead of a 500.
+        if ($request->hasSession()) {
+            $request->session()->regenerate();
+        }
 
         $apiToken = $user->createToken($request->input('device_name') ?: 'mobile')->plainTextToken;
 

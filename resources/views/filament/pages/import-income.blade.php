@@ -16,6 +16,39 @@
             </form>
         </x-filament::section>
 
+        <x-filament::section icon="heroicon-o-document-arrow-down" :heading="__('Sample files')"
+                             :description="__('Each sample is exactly the format the import reads, with fictional data. Open one to see the columns, or import it to try the flow.')"
+                             collapsible>
+            @php
+                $samples = [
+                    ['invoices', ['csv', 'xlsx'], __('Invoices list'), __('17 columns from "Fatture emesse": number, date, seller VAT, buyer, taxable amount, VAT, SDI id, virtual stamp. Includes a credit note, imported as a negative amount.')],
+                    ['cash-register', ['csv', 'xlsx'], __('Cash register (corrispettivi)'), __('9 columns per daily total: send id, device serial, date and time, sales, taxable sales, VAT. Days with no sales are skipped.')],
+                    ['e-invoice', ['xml'], __('E-invoice (FatturaPA)'), __('One invoice as the SDI sends it. A ZIP of these files, or signed .xml.p7m files, can be imported the same way.')],
+                ];
+            @endphp
+            <div class="vt-table-wrap">
+                <table class="vt-table">
+                    <tbody>
+                        @foreach ($samples as [$format, $exts, $label, $about])
+                            <tr>
+                                <td style="width:30%;font-weight:600">{{ $label }}</td>
+                                <td class="vt-muted vt-small">{{ $about }}</td>
+                                <td style="white-space:nowrap;text-align:right">
+                                    @foreach ($exts as $ext)
+                                        <x-filament::button tag="a" size="sm" color="gray" icon="heroicon-m-arrow-down-tray"
+                                            :href="route('tax.import-sample', ['format' => $format, 'ext' => $ext])">
+                                            {{ strtoupper($ext === 'xlsx' ? 'Excel' : $ext) }}
+                                        </x-filament::button>
+                                    @endforeach
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            <p class="vt-muted vt-small" style="margin-top:.75rem">{{ __('The samples use VAT number 01234567890. Download them from a customer\'s tax dashboard to get that customer\'s VAT number, so they are matched automatically.') }}</p>
+        </x-filament::section>
+
         <x-filament::section icon="heroicon-o-light-bulb" :heading="__('Where do I get these files?')" collapsible collapsed>
             <ol class="vt-small" style="list-style:decimal;padding-left:1.25rem;display:grid;gap:.375rem">
                 <li>{!! __('Sign in to <strong>Fatture e Corrispettivi</strong> (Agenzia delle Entrate) for the customer, or as their delegated intermediary.') !!}</li>

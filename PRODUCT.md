@@ -21,18 +21,18 @@ The figures are the accountant's own calculations for this customer (flat tax 5%
 
 ## Operating Context
 
-- Payments are made with the F24 form (home banking or the accountant); each line has a code (1790/1791/1792, AF/CF/APR/CPR, 2521–2524, 3850).
+- Payments are made with the F24 form (home banking or the accountant); each line has a code (1790/1791/1792, AF/CF/AP/CP, PXX/P10, 2521–2524, 3850).
 - Deadlines cluster on 16 May, 30 June, 20 Aug, 16 Nov, 30 Nov, 16 Feb and quarter ends; overdue items need a clear path to settle.
 - The office links a customer login to the customer record; until then the account sees no figures.
 - Languages: Italian and English (Bengali exists for staff UI); customers mostly read Italian.
 
 ## Capabilities and Constraints
 
-- Customer routes: `/app/login`, `/app/register`, `/reset-password`, `/verify-email`, `/email-verified`, `/auth/callback`, `/app/tax` (React 19 + Vite, Sanctum SPA session, Blade shells).
+- Customer routes: `/login`, `/register` (old `/app/login`, `/app/register` redirect), `/reset-password`, `/verify-email`, `/email-verified`, `/auth/callback`, `/app/tax` (React 19 + Vite, Sanctum SPA session, Blade shells).
 - Read-only for customers: they cannot change figures or record payments.
 - Sign-in options: email + password, Google, Turnstile captcha when configured, 2FA and device lock on the panel login.
 - Public registration stays open; an unlinked account must be told plainly that the office has to link it.
-- The main panel login (`/login`) is shared with staff; customers who use it must land in the portal.
+- Separate sign-ins and dashboards (user decision, Nov 2026): staff use `/panel/login` → `/panel` (Filament, admin look); customers use `/login` → `/app/tax`. Signing in on the other page still works and lands on your own dashboard; `/` redirects each account to its dashboard.
 
 ## Brand Commitments
 

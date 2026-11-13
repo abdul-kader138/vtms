@@ -234,8 +234,12 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                 $action->getModalSubmitAction()->label(__('Import')),
                 $action->getModalCancelAction(),
             ])
-            ->extraModalFooterActions([
+            ->extraModalFooterActions(fn () => [
                 Action::make('openImportPage')->label(__('Import several files'))->color('gray')->link()->url(ImportIncome::getUrl()),
+                Action::make('sampleInvoices')->label(__('Sample invoices list'))->icon('heroicon-m-arrow-down-tray')->color('gray')->link()
+                    ->url(route('tax.import-sample', ['format' => 'invoices', 'ext' => 'csv', 'customer' => $this->customerRecord->id])),
+                Action::make('sampleCashRegister')->label(__('Sample cash register'))->icon('heroicon-m-arrow-down-tray')->color('gray')->link()
+                    ->url(route('tax.import-sample', ['format' => 'cash-register', 'ext' => 'csv', 'customer' => $this->customerRecord->id])),
             ])
             ->form([
                 FileUpload::make('file')
@@ -297,10 +301,13 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             ->fillForm(function (array $arguments): array {
                 $payment = $this->findPayment($arguments);
 
+                // Confirming a payment the customer reported: start from what they sent.
+                $reported = $payment?->reported_paid_at && $payment->status !== PaymentStatus::Paid;
+
                 return [
-                    'status' => $payment?->status?->value ?? PaymentStatus::Paid->value,
-                    'paid_amount' => $payment?->paid_amount ?? $payment?->amount,
-                    'paid_date' => $payment?->paid_date ?? now()->toDateString(),
+                    'status' => $reported ? PaymentStatus::Paid->value : ($payment?->status?->value ?? PaymentStatus::Paid->value),
+                    'paid_amount' => $reported ? $payment->reported_paid_amount : ($payment?->paid_amount ?? $payment?->amount),
+                    'paid_date' => $reported ? $payment->reported_paid_date : ($payment?->paid_date ?? now()->toDateString()),
                 ];
             })
             ->form([

@@ -45,8 +45,8 @@ class CustomerSideTest extends TestCase
 
     public function test_auth_and_status_pages_render_in_the_new_shell(): void
     {
-        $this->get('/app/login')->assertOk()->assertSee('c-auth', false)->assertSee('customer-auth-root', false);
-        $this->get('/app/register')->assertOk()->assertSee('data-mode="register"', false);
+        $this->get('/login')->assertOk()->assertSee('c-auth', false)->assertSee('customer-auth-root', false);
+        $this->get('/register')->assertOk()->assertSee('data-mode="register"', false);
         $this->get('/verify-email')->assertOk()
             ->assertSee('links the account to your tax records', false)
             ->assertSee(route('customer.login'), false);
@@ -55,8 +55,36 @@ class CustomerSideTest extends TestCase
 
     public function test_pages_render_in_italian(): void
     {
-        $this->withCookie('locale', 'it')->get('/app/login')->assertOk();
+        $this->withCookie('locale', 'it')->get('/login')->assertOk();
         app()->setLocale('it');
         $this->assertSame('Le tue tasse, una fermata alla volta.', __('Your taxes, one stop at a time.'));
+    }
+
+    public function test_staff_and_customers_have_separate_sign_ins_and_dashboards(): void
+    {
+        $this->seed(ShieldSeeder::class);
+        $admin = User::where('email', env('ADMIN_EMAIL', 'admin@admin.com'))->firstOrFail();
+        $customerUser = User::factory()->create(['customer_id' => Customer::create(['name' => 'Portal'])->id]);
+
+        // Addresses
+        $this->get('/login')->assertOk()->assertSee('customer-auth-root', false);
+        $this->get('/panel/login')->assertOk()->assertDontSee('customer-auth-root', false);
+        $this->get('/app/login')->assertRedirect('/login');
+        $this->get('/app/register')->assertRedirect('/register');
+
+        // "/" is each account's own dashboard
+        $this->get('/')->assertRedirect(route('customer.login'));
+        $this->actingAs($admin)->get('/')->assertRedirect('/panel');
+        $this->actingAs($customerUser)->get('/')->assertRedirect(route('customer.tax'));
+
+        // Wrong side → own dashboard
+        $this->actingAs($admin)->get('/app/tax')->assertRedirect('/panel');
+        $this->actingAs($customerUser)->get('/app/tax')->assertOk();
+    }
+
+    public function test_guests_are_sent_to_the_matching_sign_in(): void
+    {
+        $this->get('/panel/customers')->assertRedirect('/panel/login');
+        $this->get(route('tax.import-sample', ['format' => 'invoices', 'ext' => 'csv']))->assertRedirect('/panel/login');
     }
 }

@@ -38,6 +38,13 @@
                         <x-filament::badge :color="match ($status) { 'paid' => 'success', 'overdue' => 'danger', 'cancelled' => 'gray', default => 'warning' }">
                             {{ match ($status) { 'paid' => __('Paid'), 'overdue' => __('Overdue'), 'cancelled' => __('Cancelled'), default => __('Upcoming') } }}
                         </x-filament::badge>
+                        @if ($payment->reported_paid_at && $status !== 'paid')
+                            <div style="margin-top:.25rem">
+                                <x-filament::badge color="info" icon="heroicon-m-inbox-arrow-down" :tooltip="__('Reported by the customer on :date', ['date' => $payment->reported_paid_at->format('d/m/Y')])">
+                                    {{ __('Customer paid :amount on :date', ['amount' => '€ '.number_format((float) $payment->reported_paid_amount, 2, ',', '.'), 'date' => $payment->reported_paid_date?->format('d/m/Y')]) }}
+                                </x-filament::badge>
+                            </div>
+                        @endif
                     </td>
                     <td class="vt-num">
                         € {{ number_format((float) $payment->paid_amount, 2, ',', '.') }}

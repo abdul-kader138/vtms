@@ -38,12 +38,14 @@ class TaxSendPaymentReminders extends Command
                 ->get();
 
             foreach ($payments as $payment) {
-                if ((float) $payment->amount - (float) $payment->paid_amount <= 0) {
+                // Nothing left to pay, or the customer already reported paying it.
+                if ((float) $payment->amount - (float) $payment->paid_amount <= 0 || $payment->reported_paid_at !== null) {
                     continue;
                 }
 
                 foreach ($payment->customer?->users ?? [] as $user) {
-                    if (! $user->hasVerifiedEmail()) {
+                    // Customers switch reminder emails off on their account page.
+                    if (! $user->hasVerifiedEmail() || $user->tax_reminders_enabled === false) {
                         continue;
                     }
 

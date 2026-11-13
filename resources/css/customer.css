@@ -1,7 +1,7 @@
 /*
  * Customer side — portal, sign-in, register, status pages.
  * World: Milan Metropolitana signage (Noorda/Albini, 1964). White ground,
- * one line colour (M2 green), near-black ink; red only for overdue, amber
+ * one line colour (Metro blue), near-black ink; red only for overdue, amber
  * only for "due soon". The tax year is drawn as a line of stations.
  */
 @import '@fontsource-variable/schibsted-grotesk';
@@ -15,10 +15,10 @@
     --rule: #dde2dd;
     --rule-strong: #b9c1bb;
 
-    --line: #007a37;
-    --line-strong: #00652d;
-    --line-tint: #e5f2e9;
-    --line-tint-2: #cce6d5;
+    --line: #0057a8;
+    --line-strong: #00468a;
+    --line-tint: #e6effa;
+    --line-tint-2: #c9dcf2;
 
     --overdue: #c41e2e;
     --overdue-ink: #a3121f;
@@ -114,6 +114,8 @@ body.c-body {
     background: var(--ground); color: var(--ink); font: inherit; font-size: 16px; outline: none;
     transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
 }
+.c-textarea { width: 100%; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--rule-strong); background: var(--ground); color: var(--ink); font: inherit; font-size: 16px; resize: vertical; }
+.c-textarea:focus { border-color: var(--line); outline: 0; box-shadow: 0 0 0 3px var(--line-tint-2); }
 .c-field input::placeholder { color: var(--ink-3); }
 .c-field :is(input, select):hover { border-color: var(--ink-3); }
 .c-field :is(input, select):focus { border-color: var(--line); box-shadow: 0 0 0 3px var(--line-tint-2); }
@@ -253,6 +255,17 @@ body.c-body {
 .c-stop-detail dl { margin: 0 0 10px 140px; padding: 12px 16px; border-radius: var(--radius); background: var(--ground-2); display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 14px; }
 .c-stop-detail dt { color: var(--ink-3); }
 .c-stop-detail dd { margin: 0; font-weight: 600; font-variant-numeric: lining-nums; }
+.c-stop-actions, .c-calendar-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 16px 12px 140px; }
+.c-paid-form { margin: 0 16px 16px 140px; padding: 14px; border: 1px solid var(--rule); border-radius: var(--radius); display: grid; gap: 12px; }
+.c-detail-overdue { color: var(--overdue-ink); }
+.c-detail-note { display: block; color: var(--ink-3); font-size: 12px; font-weight: 400; }
+.c-account-nav { display: flex; gap: 18px; margin-right: auto; align-items: center; font-size: 14px; }
+.c-account-nav a { color: rgb(255 255 255 / .8); text-decoration: none; }
+.c-account-nav strong { color: #fff; }
+.c-account-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .8fr); gap: 48px; align-items: start; }
+.c-account-section { display: grid; gap: 18px; }
+.c-account-copy { color: var(--ink-2); font-size: 15px; line-height: 1.55; max-width: 48ch; }
+.c-calendar-actions { margin: 0; }
 
 .c-today { position: relative; display: grid; grid-template-columns: 88px 40px 1fr; gap: 0 12px; align-items: center; height: 34px; }
 .c-today { height: 44px; }
@@ -333,6 +346,9 @@ body.c-body {
     .c-today { grid-template-columns: 64px 32px 1fr; gap: 0 8px; }
     .c-stop-detail dl { margin-left: 104px; grid-template-columns: 1fr; gap: 2px; }
     .c-stop-detail dd { margin-bottom: 6px; }
+    .c-stop-actions, .c-paid-form { margin-left: 104px; }
+    .c-account-grid { grid-template-columns: 1fr; gap: 36px; }
+    .c-account-nav { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
