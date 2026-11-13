@@ -14,18 +14,18 @@
 
 <style>
     body.fi-body {
-        --auth-signal: #0e7490;
-        --auth-signal-hover: #155e75;
-        --auth-signal-tint: #ecfeff;
-        --auth-border: #e2e8f0;
-        --auth-input-border: #cbd5e1;
-        --auth-text: #0f172a;
-        --auth-text-secondary: #475569;
-        --auth-text-muted: #64748b;
+        --auth-signal: #075985;
+        --auth-signal-hover: #0c4a6e;
+        --auth-signal-tint: #e0f2fe;
+        --auth-border: #d8e1e5;
+        --auth-input-border: #b8c7cf;
+        --auth-text: #102a43;
+        --auth-text-secondary: #486581;
+        --auth-text-muted: #627d98;
         --auth-font: 'Inter', system-ui, -apple-system, sans-serif;
         --auth-font-display: 'Archivo', 'Inter', sans-serif;
 
-        background: #f8fafc !important;
+        background: #f3f7f8 !important;
         font-family: var(--auth-font) !important;
         color-scheme: light !important;
         color: var(--auth-text) !important;
@@ -67,9 +67,9 @@
         width: 100% !important;
         background: #ffffff !important;
         border: 1px solid var(--auth-border) !important;
-        border-radius: 8px !important;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05) !important;
-        padding: 36px !important;
+        border-radius: 12px !important;
+        box-shadow: 0 18px 50px rgba(16, 42, 67, 0.12) !important;
+        padding: 42px !important;
         box-sizing: border-box !important;
     }
 
@@ -78,7 +78,7 @@
     .fi-simple-page .text-gray-950 {
         color: var(--auth-text) !important;
         font-family: var(--auth-font-display) !important;
-        font-size: 26px !important;
+        font-size: 30px !important;
         font-weight: 800 !important;
         letter-spacing: -0.02em !important;
         text-align: center !important;
@@ -123,8 +123,8 @@
         background: #ffffff !important;
         border: 0 !important;
         color: var(--auth-text) !important;
-        border-radius: 5px !important;
-        height: 44px !important;
+        border-radius: 7px !important;
+        height: 48px !important;
         padding: 0 14px !important;
         font-size: 14px !important;
         text-align: left !important;
@@ -140,7 +140,7 @@
         border: 1px solid var(--auth-input-border) !important;
         box-shadow: none !important;
         background: #ffffff !important;
-        border-radius: 5px !important;
+        border-radius: 7px !important;
         --tw-ring-shadow: none !important;
         --tw-ring-offset-shadow: none !important;
         transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
@@ -164,8 +164,8 @@
         background: var(--auth-signal) !important;
         color: #ffffff !important;
         border: 1px solid var(--auth-signal) !important;
-        border-radius: 5px !important;
-        height: 38px !important;
+        border-radius: 7px !important;
+        height: 46px !important;
         padding: 0 17px !important;
         font-size: 14px !important;
         font-weight: 600 !important;
@@ -226,12 +226,12 @@
         cursor: pointer !important;
     }
 
-    .auth-brand { display: flex; flex-direction: column; align-items: center; margin-bottom: 24px; text-align: center; }
+    .auth-brand { display: flex; flex-direction: column; align-items: center; margin-bottom: 30px; text-align: center; }
     .fi-simple-page a.auth-brand-link { display: inline-flex; align-items: center; gap: 11px; color: var(--auth-text) !important; text-decoration: none !important; }
-    .auth-brand-icon { width: 36px; height: 36px; border-radius: 6px; background: #121212; color: #ffffff; display: grid; place-items: center; overflow: hidden; }
+    .auth-brand-icon { width: 40px; height: 40px; border-radius: 9px; background: var(--auth-signal); color: #ffffff; display: grid; place-items: center; overflow: hidden; box-shadow: 0 5px 12px rgba(7,89,133,.2); }
     .auth-brand-icon img { width: 100%; height: 100%; object-fit: contain; }
     .auth-brand-initial { font-family: var(--auth-font-display); font-size: 16px; font-weight: 800; }
-    .auth-brand-name { font-family: var(--auth-font-display); font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: var(--auth-text); }
+    .auth-brand-name { font-family: var(--auth-font-display); font-size: 21px; font-weight: 800; letter-spacing: -0.03em; color: var(--auth-text); }
     .auth-brand-tagline { margin-top: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--auth-signal); }
     .auth-flash { width: 100%; max-width: 460px; margin: 0 auto 16px; padding: 13px 18px; box-sizing: border-box; border: 1px solid #a7f3d0; border-radius: 5px; background: #ecfdf5; color: #065f46; font-size: 14px; font-weight: 500; text-align: center; }
 
