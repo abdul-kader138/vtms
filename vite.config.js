@@ -9,8 +9,10 @@ export default defineConfig({
         laravel({
             input: [
                 'resources/css/app.css',
+                'resources/css/customer.css',
                 'resources/js/app.js',
                 'resources/js/customer-auth.jsx',
+                'resources/js/customer-tax.jsx',
             ],
             refresh: true,
             fonts: [

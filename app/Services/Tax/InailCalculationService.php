@@ -25,7 +25,7 @@ class InailCalculationService
             return null;
         }
 
-        $taxableIncome = (float) $taxCalculation->taxable_income;
+        $taxableIncome = $taxCalculation->grossIncome();
         $rate = (float) $customer->inail_rate;
         $minimum = (float) $customer->inail_minimum_payment;
 

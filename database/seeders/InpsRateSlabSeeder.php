@@ -37,5 +37,44 @@ class InpsRateSlabSeeder extends Seeder
                 $row + ['is_active' => true]
             );
         }
+
+        $this->carryForwardToCurrentYear();
+    }
+
+    /**
+     * INPS publishes each year's rates in a circular early in the year, so
+     * the current year often has no slabs yet — and the calculator then
+     * silently computes €0 INPS. Copy the latest known year forward for any
+     * customer type that has nothing for the current year, clearly labelled
+     * so an admin replaces it. firstOrCreate: never overwrites real rows an
+     * admin has already entered.
+     */
+    private function carryForwardToCurrentYear(): void
+    {
+        $year = (int) now()->year;
+
+        foreach (CustomerType::cases() as $type) {
+            if (InpsRateSlab::where('slab_year', $year)->where('customer_type', $type)->exists()) {
+                continue;
+            }
+
+            $latest = InpsRateSlab::where('customer_type', $type)->where('slab_year', '<', $year)->max('slab_year');
+
+            if ($latest === null) {
+                continue;
+            }
+
+            InpsRateSlab::where('customer_type', $type)->where('slab_year', $latest)->get()
+                ->each(fn (InpsRateSlab $slab) => InpsRateSlab::firstOrCreate(
+                    ['slab_year' => $year, 'customer_type' => $type, 'income_from' => $slab->income_from],
+                    [
+                        'income_to' => $slab->income_to,
+                        'inps_rate' => $slab->inps_rate,
+                        'fixed_amount' => $slab->fixed_amount,
+                        'description' => "CARRIED FORWARD from {$latest} — verify against the INPS circular for {$year}",
+                        'is_active' => true,
+                    ]
+                ));
+        }
     }
 }

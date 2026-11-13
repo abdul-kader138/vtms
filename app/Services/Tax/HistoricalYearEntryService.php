@@ -112,7 +112,7 @@ class HistoricalYearEntryService
 
             if (isset($data['fattura_tra_privati_payment'])) {
                 FatturaTraPrivatiPayment::updateOrCreate(
-                    ['customer_id' => $customer->id, 'payment_year' => $year],
+                    ['customer_id' => $customer->id, 'payment_year' => $year, 'quarter' => 0],
                     array_merge($data['fattura_tra_privati_payment'], ['fattura_tra_privati_calculation_id' => $fatturaCalculation?->id])
                 );
             }

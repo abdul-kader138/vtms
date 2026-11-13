@@ -34,6 +34,9 @@ class Login extends BaseLogin
     use HasDeviceFingerprintField;
     use HasTurnstileField;
 
+    /** Metro-line sign-in shared with the customer side (see the layout). */
+    protected static string $layout = 'filament.auth.metro-layout';
+
     public bool $twoFactorChallenge = false;
 
     public bool $showResendVerification = false;

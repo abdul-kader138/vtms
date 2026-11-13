@@ -75,6 +75,10 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::STYLES_AFTER,
                 fn () => self::resolveAdminPanelModeStyles(),
             )
+            ->renderHook(
+                PanelsRenderHook::STYLES_AFTER,
+                fn () => view('filament.partials.vt-styles'),
+            )
             ->sidebarCollapsibleOnDesktop()
             ->sidebarWidth('15rem')
             ->navigationGroups([
@@ -332,7 +336,7 @@ CSS;
         return view('components.google-auth-button');
     }
 
-    protected static function resolveBrandLogoUrl(): ?string
+    public static function resolveBrandLogoUrl(): ?string
     {
         try {
             $path = Setting::get('app_logo');
@@ -345,7 +349,7 @@ CSS;
 
     // "favicon" overrides "app_icon" when both are set — matches the field
     // helper text in SystemSettings ("Overrides the app icon for browser tabs").
-    protected static function resolveFaviconUrl(): ?string
+    public static function resolveFaviconUrl(): ?string
     {
         try {
             $path = Setting::get('favicon') ?: Setting::get('app_icon');

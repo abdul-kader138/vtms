@@ -15,6 +15,8 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Storage;
@@ -23,7 +25,7 @@ use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['first_name', 'last_name', 'email', 'phone', 'tax_id', 'address', 'marketing_opt_in', 'password', 'avatar', 'google_id', 'email_verified_at', 'locale'])]
+#[Fillable(['customer_id', 'first_name', 'last_name', 'email', 'phone', 'tax_id', 'address', 'marketing_opt_in', 'password', 'avatar', 'google_id', 'email_verified_at', 'locale'])]
 #[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
 class User extends Authenticatable implements FilamentUser, HasAvatar, HasLocalePreference, HasName, MustVerifyEmail
 {
@@ -160,9 +162,14 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasLocale
         $this->notify(new ResetPassword($token));
     }
 
-    public function userSession(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function userSession(): HasOne
     {
         return $this->hasOne(UserSession::class);
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function getFilamentAvatarUrl(): ?string

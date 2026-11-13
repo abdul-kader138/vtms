@@ -19,6 +19,7 @@
         "phpoffice/phpspreadsheet": "^5.11",
         "pragmarx/google2fa-qrcode": "^4.0",
         "spatie/laravel-activitylog": "^5.0",
+        "spatie/laravel-backup": "^10.4",
         "spatie/laravel-permission": "^6.25"
     },
     "require-dev": {

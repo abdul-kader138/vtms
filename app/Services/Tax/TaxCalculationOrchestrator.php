@@ -3,6 +3,7 @@
 namespace App\Services\Tax;
 
 use App\Models\Customer;
+use App\Support\Tax\TaxRules;
 use Illuminate\Support\Facades\DB;
 
 class TaxCalculationOrchestrator
@@ -35,9 +36,17 @@ class TaxCalculationOrchestrator
                 $this->paymentScheduleService->scheduleInailPayment($inailCalculation, $customer);
             }
 
-            $bracket = $this->dirittoAnnualeCalculationService->matchBracket($customer, $year, $taxCalculation);
-            if ($bracket) {
-                $this->paymentScheduleService->scheduleDirittoAnnualePayment($customer, $year, $bracket);
+            $bracket = null;
+            if (TaxRules::isLaw()) {
+                $amount = $this->dirittoAnnualeCalculationService->amountFor($customer);
+                if ($amount) {
+                    $this->paymentScheduleService->scheduleDirittoAnnualePayment($customer, $year, null, $amount);
+                }
+            } else {
+                $bracket = $this->dirittoAnnualeCalculationService->matchBracket($customer, $year, $taxCalculation);
+                if ($bracket) {
+                    $this->paymentScheduleService->scheduleDirittoAnnualePayment($customer, $year, $bracket);
+                }
             }
 
             $fatturaCalculation = $this->fatturaTraPrivatiCalculationService->calculateForYear($customer, $year);

@@ -20,6 +20,13 @@ return [
     'default' => env('DB_CONNECTION', 'sqlite'),
 
     /*
+    | migrate:fresh / refresh / reset / rollback and db:wipe are refused on
+    | any non-SQLite connection unless this is true (see AppServiceProvider).
+    | Set it only for the one command that needs it, never in a saved .env.
+    */
+    'allow_destructive' => (bool) env('DB_ALLOW_DESTRUCTIVE', false),
+
+    /*
     |--------------------------------------------------------------------------
     | Database Connections
     |--------------------------------------------------------------------------
@@ -59,6 +66,8 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // Consistent dump of InnoDB tables without locking the app.
+            'dump' => ['useSingleTransaction' => true, 'skipLockTables' => true],
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],

@@ -1,8 +1,11 @@
 <?php
 
+use App\Http\Controllers\AnnualTaxReportController;
 use App\Http\Controllers\Auth\CustomerGoogleAuthController;
 use App\Http\Controllers\Auth\GoogleAuthController;
+use App\Http\Controllers\Auth\ResendVerificationController;
 use App\Http\Controllers\Auth\StaffVerifyEmailController;
+use App\Http\Controllers\F24SheetController;
 use App\Http\Controllers\LocaleController;
 use App\Http\Controllers\TaxPaymentReceiptController;
 use Illuminate\Http\Request;
@@ -22,6 +25,11 @@ Route::get('/admin/email/verify/{id}/{hash}', StaffVerifyEmailController::class)
 Route::get('/app/login', fn () => view('customer.auth', ['mode' => 'login']))->name('customer.login');
 Route::get('/app/register', fn () => view('customer.auth', ['mode' => 'register']))->name('customer.register');
 
+// Customer tax dashboard — Blade shell for resources/js/customer-tax.jsx.
+// Auth is enforced by the /api/v1/tax/* endpoints it calls (a 401 there
+// sends the browser to /app/login), same as the auth screens above.
+Route::get('/app/tax', fn () => view('customer.tax'))->name('customer.tax');
+
 // Lands here with ?token=&email= in the query string — see
 // App\Notifications\Auth\ResetPassword::resetUrl(), which builds exactly
 // this URL (same FRONTEND_URL-points-at-this-app situation as /email-
@@ -38,11 +46,11 @@ Route::get('/verify-email', fn () => view('customer.status', [
     'title' => 'Check your email',
     'message' => 'Account created. Open the verification link in your email before signing in. If you cannot find it, check your spam folder.',
     'ctaLabel' => 'Back to sign in',
-    'ctaHref' => route('filament.admin.auth.login'),
+    'ctaHref' => route('customer.login'),
     'showResendVerification' => true,
 ]))->name('customer.verification-notice');
 
-Route::post('/verify-email/resend', \App\Http\Controllers\Auth\ResendVerificationController::class)
+Route::post('/verify-email/resend', ResendVerificationController::class)
     ->middleware('throttle:6,1')
     ->name('customer.verification-resend');
 
@@ -56,11 +64,7 @@ Route::get('/email-verified', function (Request $request) {
             ? 'This email address was already confirmed — you can sign in now.'
             : 'Your email address is confirmed. You can sign in now.',
         'ctaLabel' => 'Go to sign in',
-        // Filament's own Login::mount() redirects an already-authenticated
-        // user straight into the panel, so this is correct whether the
-        // visitor is signed in already (the Google success case) or not
-        // (email verification, where they still need to enter a password).
-        'ctaHref' => route('filament.admin.auth.login'),
+        'ctaHref' => route('customer.login'),
     ]);
 })->name('customer.email-verified');
 
@@ -74,7 +78,7 @@ Route::get('/auth/callback', function (Request $request) {
             ? "You're signed in with Google."
             : 'Something went wrong signing in with Google. Please try again.',
         'ctaLabel' => $success ? 'Continue' : 'Back to sign in',
-        'ctaHref' => route('filament.admin.auth.login'),
+        'ctaHref' => $success ? route('customer.tax') : route('customer.login'),
     ]);
 })->name('customer.auth.callback');
 
@@ -100,3 +104,15 @@ Route::prefix('auth/google')->name('customer.auth.google.')->middleware('throttl
 Route::get('/customers/{customer}/tax/payments/{type}/{id}/receipt', TaxPaymentReceiptController::class)
     ->middleware(['signed', 'auth'])
     ->name('tax.payments.receipt.download');
+
+// Generated (not uploaded) "Conto Economico" annual income statement PDF —
+// see App\Services\Tax\AnnualTaxReportService. Same gating as the receipt
+// route above.
+Route::get('/customers/{customer}/tax/{year}/annual-report', AnnualTaxReportController::class)
+    ->middleware(['signed', 'auth'])
+    ->name('tax.annual-report.download');
+
+// F24 payment sheet for one customer and deadline (pay_on in the signed query).
+Route::get('/customers/{customer}/tax/f24/{date}', F24SheetController::class)
+    ->middleware(['signed', 'auth'])
+    ->name('tax.f24-sheet.download');

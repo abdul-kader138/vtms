@@ -2,36 +2,37 @@
 
 namespace App\Filament\Pages;
 
-use App\Enums\IncomeSource;
 use App\Enums\PaymentStatus;
 use App\Models\Customer;
-use App\Models\DirittoAnnualePayment;
-use App\Models\FatturaTraPrivatiCalculation;
-use App\Models\FatturaTraPrivatiPayment;
-use App\Models\InailCalculation;
-use App\Models\InailPayment;
-use App\Models\IncomeData;
-use App\Models\InpsCalculation;
-use App\Models\InpsPayment;
+use App\Models\IncomeImportBatch;
 use App\Models\TaxCalculation;
-use App\Models\TaxPayment;
 use App\Services\Tax\Import\IncomeDataImportService;
-use App\Services\Tax\Import\PrivatiDeviceImportParser;
-use App\Services\Tax\Import\SdiFatturaImportParser;
+use App\Services\Tax\PaymentCalendarService;
+use App\Services\Tax\PaymentRegistry;
+use App\Services\Tax\RavvedimentoService;
 use App\Services\Tax\TaxCalculationOrchestrator;
+use App\Services\Tax\TaxOverviewService;
+use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
+use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\HtmlString;
 use Throwable;
 
 /**
@@ -55,9 +56,18 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
 
     public int $selectedYear;
 
-    public function mount(int|string $customer, int|string|null $year = null): void
+    // Only $customer is a mount parameter: an optional second scalar parameter
+    // with a default (for $year) makes Laravel's resolveMethodDependencies()
+    // splice that default into the route-params array when /tax has no year
+    // segment, turning it into a mix of named + positional keys. Livewire's
+    // lifecycle hooks then unpack that array with `...$params`, which PHP
+    // rejects ("positional argument after named argument"). Reading $year
+    // straight off the route avoids ever giving mount() an optional param.
+    public function mount(int|string $customer): void
     {
         $this->customerRecord = Customer::findOrFail((int) $customer);
+
+        $year = request()->route('year');
         $this->selectedYear = $year !== null ? (int) $year : now()->year;
     }
 
@@ -83,44 +93,9 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
         return TaxCalculation::where('customer_id', $this->customerRecord->id)->where('tax_year', $this->selectedYear)->first();
     }
 
-    public function getTaxPayments(): \Illuminate\Support\Collection
+    public function getOverview(): array
     {
-        return TaxPayment::where('customer_id', $this->customerRecord->id)->where('tax_year', $this->selectedYear)->orderBy('due_date')->get();
-    }
-
-    public function getInpsCalculation(): ?InpsCalculation
-    {
-        return InpsCalculation::where('customer_id', $this->customerRecord->id)->where('tax_year', $this->selectedYear)->first();
-    }
-
-    public function getInpsPayments(): \Illuminate\Support\Collection
-    {
-        return InpsPayment::where('customer_id', $this->customerRecord->id)->where('payment_year', $this->selectedYear)->orderBy('installment_number')->get();
-    }
-
-    public function getInailCalculation(): ?InailCalculation
-    {
-        return InailCalculation::where('customer_id', $this->customerRecord->id)->where('tax_year', $this->selectedYear)->first();
-    }
-
-    public function getInailPayment(): ?InailPayment
-    {
-        return InailPayment::where('customer_id', $this->customerRecord->id)->where('payment_year', $this->selectedYear)->first();
-    }
-
-    public function getDirittoAnnualePayment(): ?DirittoAnnualePayment
-    {
-        return DirittoAnnualePayment::where('customer_id', $this->customerRecord->id)->where('payment_year', $this->selectedYear)->first();
-    }
-
-    public function getFatturaCalculation(): ?FatturaTraPrivatiCalculation
-    {
-        return FatturaTraPrivatiCalculation::where('customer_id', $this->customerRecord->id)->where('tax_year', $this->selectedYear)->first();
-    }
-
-    public function getFatturaPayment(): ?FatturaTraPrivatiPayment
-    {
-        return FatturaTraPrivatiPayment::where('customer_id', $this->customerRecord->id)->where('payment_year', $this->selectedYear)->first();
+        return app(TaxOverviewService::class)->build($this->customerRecord, $this->selectedYear);
     }
 
     public function previousYearUrl(): string
@@ -145,7 +120,91 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
         return [
             $this->recalculateAction(),
             $this->importIncomeDataAction(),
+            $this->f24SheetAction(),
+            $this->annualTaxReportAction(),
         ];
+    }
+
+    public static function f24SheetUrl(int $customerId, CarbonInterface $due, CarbonInterface $payOn): string
+    {
+        return URL::temporarySignedRoute('tax.f24-sheet.download', now()->addMinutes(30), [
+            'customer' => $customerId,
+            'date' => $due->format('Y-m-d'),
+            'pay_on' => ($payOn->lt($due) ? $due : $payOn)->format('Y-m-d'),
+        ]);
+    }
+
+    /** One F24 sheet per deadline: everything still open that is due that day. */
+    public function f24SheetAction(): Action
+    {
+        return Action::make('f24Sheet')
+            ->label(__('F24 sheet'))
+            ->icon('heroicon-o-document-currency-euro')
+            ->color('gray')
+            ->modalDescription(__('All open payments of one deadline, line by line as they go on the F24. Paying after the deadline adds the ravvedimento interest and penalty.'))
+            ->modalSubmitActionLabel(__('Download PDF'))
+            ->form([
+                Select::make('due_date')
+                    ->label(__('Deadline'))
+                    ->native(false)
+                    ->required()
+                    ->options(fn () => app(PaymentCalendarService::class)
+                        ->entries(status: 'open', customerId: $this->customerRecord->id)
+                        ->groupBy(fn ($e) => $e['due_date']->format('Y-m-d'))
+                        ->sortKeys()
+                        ->mapWithKeys(fn ($rows, $date) => [$date => Carbon::parse($date)->format('d/m/Y').' — € '.number_format($rows->sum('outstanding'), 2, ',', '.').($rows->first()['status'] === 'overdue' ? ' · '.__('overdue') : '')])
+                        ->all()),
+                DatePicker::make('pay_on')->label(__('Payment date'))->default(now()->toDateString())->required(),
+            ])
+            ->action(fn (array $data) => redirect()->to(self::f24SheetUrl($this->customerRecord->id, Carbon::parse($data['due_date']), Carbon::parse($data['pay_on']))));
+    }
+
+    /** What an overdue payment costs to settle today (or another day) — ravvedimento operoso. */
+    public function lateCostAction(): Action
+    {
+        return Action::make('lateCost')
+            ->label(__('Late-payment cost'))
+            ->icon('heroicon-o-calculator')
+            ->modalHeading(__('Late-payment cost (ravvedimento operoso)'))
+            ->modalSubmitActionLabel(__('Download F24 sheet'))
+            ->fillForm(fn (array $arguments) => ['type' => $arguments['type'] ?? null, 'id' => $arguments['id'] ?? null, 'pay_on' => now()->toDateString()])
+            ->form([
+                Hidden::make('type'),
+                Hidden::make('id'),
+                DatePicker::make('pay_on')->label(__('Payment date'))->required()->live(),
+                Placeholder::make('breakdown')->hiddenLabel()->content(function (Get $get) {
+                    $payment = $this->findPayment(['type' => $get('type'), 'id' => $get('id')]);
+                    if (! $payment || ! $get('pay_on')) {
+                        return null;
+                    }
+
+                    $outstanding = round((float) $payment->amount - (float) $payment->paid_amount, 2);
+                    $r = app(RavvedimentoService::class)->calculate($get('type'), $outstanding, $payment->due_date, Carbon::parse($get('pay_on')));
+                    $eur = fn ($v) => '€ '.number_format((float) $v, 2, ',', '.');
+
+                    return new HtmlString(view('filament.pages.partials.late-cost', ['r' => $r, 'outstanding' => $outstanding, 'payment' => $payment, 'eur' => $eur])->render());
+                }),
+            ])
+            ->action(function (array $data) {
+                $payment = $this->findPayment($data);
+                abort_if($payment === null, 404);
+
+                return redirect()->to(self::f24SheetUrl($this->customerRecord->id, $payment->due_date, Carbon::parse($data['pay_on'])));
+            });
+    }
+
+    public function annualTaxReportAction(): Action
+    {
+        return Action::make('annualTaxReport')
+            ->label(__('Download annual report (PDF)'))
+            ->icon('heroicon-o-document-text')
+            ->color('gray')
+            ->visible(fn () => $this->getTaxCalculation() !== null)
+            ->url(fn () => URL::temporarySignedRoute('tax.annual-report.download', now()->addMinutes(30), [
+                'customer' => $this->customerRecord->id,
+                'year' => $this->selectedYear,
+            ]))
+            ->openUrlInNewTab();
     }
 
     public function recalculateAction(): Action
@@ -170,59 +229,64 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
         return Action::make('importIncomeData')
             ->label(__('Import income data'))
             ->icon('heroicon-o-arrow-up-tray')
+            ->modalDescription(__('Invoices list or cash register export (CSV/Excel), e-invoices (.xml / .xml.p7m) or a ZIP of them. The format is detected automatically; already-imported rows are skipped.'))
+            ->modalFooterActions(fn (Action $action) => [
+                $action->getModalSubmitAction()->label(__('Import')),
+                $action->getModalCancelAction(),
+            ])
+            ->extraModalFooterActions([
+                Action::make('openImportPage')->label(__('Import several files'))->color('gray')->link()->url(ImportIncome::getUrl()),
+            ])
             ->form([
-                Select::make('source')
-                    ->label(__('Source format'))
-                    ->options([
-                        IncomeSource::SdiFattura->value => 'SDI fattura',
-                        IncomeSource::PrivatiDevice->value => 'Privati/device',
-                    ])
-                    ->native(false)
-                    ->required(),
                 FileUpload::make('file')
-                    ->label(__('CSV/XLS file'))
+                    ->label(__('File'))
                     ->disk('local')
-                    ->directory('tax-imports')
+                    ->directory(ImportIncome::UPLOAD_DIR)
                     ->visibility('private')
-                    ->acceptedFileTypes(['text/csv', 'text/plain', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
+                    ->storeFileNamesIn('name')
+                    ->maxSize(20 * 1024)
+                    ->rules(['extensions:csv,txt,xls,xlsx,ods,xml,p7m,zip'])
                     ->required(),
             ])
             ->action(function (array $data) {
-                $source = IncomeSource::from($data['source']);
+                $importer = app(IncomeDataImportService::class);
                 $path = Storage::disk('local')->path($data['file']);
-
-                $parser = match ($source) {
-                    IncomeSource::SdiFattura => app(SdiFatturaImportParser::class),
-                    IncomeSource::PrivatiDevice => app(PrivatiDeviceImportParser::class),
-                };
+                $name = $data['name'] ?? basename($data['file']);
+                $kept = false;
 
                 try {
-                    $rows = $parser->parse($path, $this->customerRecord);
-                    $result = app(IncomeDataImportService::class)->import($rows, $this->customerRecord, Auth::id());
+                    $analysis = $importer->analyze($path, $name, $this->customerRecord);
+                    if ($analysis['error'] !== null) {
+                        Notification::make()->danger()->title(__('Import failed'))->body($analysis['error'])->persistent()->send();
+
+                        return;
+                    }
+
+                    $batch = $importer->commit($path, $name, $this->customerRecord, IncomeImportBatch::CHANNEL_UPLOAD, Auth::id(), $data['file']);
+                    $kept = true;
 
                     Notification::make()->success()->title(__('Import complete'))
-                        ->body(__(':imported imported, :duplicates duplicates skipped, :failed failed.', $result))
+                        ->body(implode("\n", array_filter([
+                            __(':imported imported, :duplicates duplicates skipped, :failed failed.', ['imported' => $batch->imported, 'duplicates' => $batch->duplicates, 'failed' => $batch->failed]),
+                            $batch->recalculated_years ? __('Recalculated: :years.', ['years' => implode(', ', $batch->recalculated_years)]) : null,
+                            ...($batch->warnings ?? []),
+                        ])))
                         ->send();
                 } catch (Throwable $e) {
                     Notification::make()->danger()->title(__('Import failed'))->body($e->getMessage())->send();
                 } finally {
-                    Storage::disk('local')->delete($data['file']);
+                    if (! $kept) {
+                        Storage::disk('local')->delete($data['file']);
+                    }
                 }
             });
     }
 
     // ── Row actions (mark paid / upload receipt), parameterized by payment type ──
 
-    private function paymentModelClass(string $type): string
+    private function findPayment(array $arguments): ?Model
     {
-        return match ($type) {
-            'tax' => TaxPayment::class,
-            'inps' => InpsPayment::class,
-            'inail' => InailPayment::class,
-            'diritto_annuale' => DirittoAnnualePayment::class,
-            'fattura_tra_privati' => FatturaTraPrivatiPayment::class,
-            default => throw new AuthorizationException('Unknown payment type.'),
-        };
+        return PaymentRegistry::find((string) ($arguments['type'] ?? ''), (int) ($arguments['id'] ?? 0), $this->customerRecord->id);
     }
 
     public function markPaidAction(): Action
@@ -231,7 +295,7 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             ->label(__('Mark as paid'))
             ->icon('heroicon-o-check-circle')
             ->fillForm(function (array $arguments): array {
-                $payment = $this->paymentModelClass($arguments['type'])::find($arguments['id']);
+                $payment = $this->findPayment($arguments);
 
                 return [
                     'status' => $payment?->status?->value ?? PaymentStatus::Paid->value,
@@ -245,12 +309,61 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                     ->options(array_combine(array_map(fn (PaymentStatus $s) => $s->value, PaymentStatus::cases()), array_map(fn (PaymentStatus $s) => ucfirst($s->value), PaymentStatus::cases())))
                     ->native(false)
                     ->required(),
-                \Filament\Forms\Components\TextInput::make('paid_amount')->label(__('Paid amount'))->numeric()->prefix('€')->required(),
+                TextInput::make('paid_amount')->label(__('Paid amount'))->numeric()->prefix('€')->required(),
                 DatePicker::make('paid_date')->label(__('Paid date')),
             ])
             ->action(function (array $arguments, array $data) {
-                $payment = $this->paymentModelClass($arguments['type'])::find($arguments['id']);
+                $payment = $this->findPayment($arguments);
                 $payment?->update($data);
+
+                Notification::make()->success()->title(__('Payment updated'))->send();
+            });
+    }
+
+    /**
+     * Full edit of a scheduled payment (amount and due date too, not just
+     * the paid fields) — VTMS's Tax_calculations::editPayment(). Note that
+     * "Recalculate" re-derives amount/due_date from the calculation, so a
+     * manual override only survives until the next recalculation.
+     */
+    public function editPaymentAction(): Action
+    {
+        return Action::make('editPayment')
+            ->label(__('Edit payment'))
+            ->icon('heroicon-o-pencil-square')
+            ->fillForm(function (array $arguments): array {
+                $payment = $this->findPayment($arguments);
+
+                return [
+                    'amount' => $payment?->amount,
+                    'due_date' => $payment?->due_date?->toDateString(),
+                    'status' => $payment?->status?->value ?? PaymentStatus::Pending->value,
+                    'paid_amount' => $payment?->paid_amount ?? 0,
+                    'paid_date' => $payment?->paid_date?->toDateString(),
+                ];
+            })
+            ->form([
+                TextInput::make('amount')->label(__('Amount'))->numeric()->minValue(0)->prefix('€')->required(),
+                DatePicker::make('due_date')->label(__('Due date'))->required(),
+                Select::make('status')
+                    ->label(__('Status'))
+                    ->options(collect(PaymentStatus::cases())->mapWithKeys(fn (PaymentStatus $s) => [$s->value => ucfirst($s->value)]))
+                    ->native(false)
+                    ->required(),
+                TextInput::make('paid_amount')->label(__('Paid amount'))->numeric()->minValue(0)->prefix('€')->default(0),
+                DatePicker::make('paid_date')->label(__('Paid date')),
+            ])
+            ->action(function (array $arguments, array $data) {
+                $payment = $this->findPayment($arguments);
+
+                if (! $payment) {
+                    Notification::make()->danger()->title(__('Payment not found'))->send();
+
+                    return;
+                }
+
+                $data['paid_amount'] = $data['paid_amount'] ?? 0;
+                $payment->update($data);
 
                 Notification::make()->success()->title(__('Payment updated'))->send();
             });
@@ -274,7 +387,7 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                     ->required(),
             ])
             ->action(function (array $arguments, array $data) {
-                $payment = $this->paymentModelClass($arguments['type'])::find($arguments['id']);
+                $payment = $this->findPayment($arguments);
                 $payment?->update(['uploaded_pdf' => $data['uploaded_pdf']]);
 
                 Notification::make()->success()->title(__('Receipt uploaded'))->send();

@@ -2,6 +2,10 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Widgets\PaymentsDueChart;
+use App\Filament\Widgets\RevenueLimitWatch;
+use App\Filament\Widgets\TaxStatsOverview;
+use App\Filament\Widgets\UpcomingDeadlines;
 use Filament\Pages\Dashboard as BaseDashboard;
 
 class Dashboard extends BaseDashboard
@@ -17,7 +21,12 @@ class Dashboard extends BaseDashboard
 
     public function getWidgets(): array
     {
-        return [];
+        return [
+            TaxStatsOverview::class,
+            UpcomingDeadlines::class,
+            RevenueLimitWatch::class,
+            PaymentsDueChart::class,
+        ];
     }
 
     public function getColumns(): int|array

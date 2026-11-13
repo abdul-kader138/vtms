@@ -3,21 +3,23 @@
 namespace App\Services\Tax\Import;
 
 use App\Enums\IncomeSource;
-use App\Models\Customer;
 use App\Services\Tax\Import\Support\ImportValueNormalizer as Norm;
-use Illuminate\Support\Collection;
+use App\Services\Tax\Import\Support\IncomeRow;
+use App\Services\Tax\Import\Support\TabularFileReader;
 use InvalidArgumentException;
-use PhpOffice\PhpSpreadsheet\Reader\Csv;
-use PhpOffice\PhpSpreadsheet\IOFactory;
 
 /**
- * Parses the device/cash-register "privati" export format (Id invio;Matricola dispositivo;...),
- * 9 semicolon-delimited columns. Format confirmed from VTMS's Transfers::import_file_to_db()
- * (behavior reference only — reimplemented from scratch, not copied).
+ * Daily totals sent by a telematic cash register (corrispettivi), exported
+ * from "Fatture e Corrispettivi" (Id invio;Matricola dispositivo;…), 9
+ * semicolon-separated columns — VTMS's Transfers::import_file_to_db() /
+ * read_and_save_csv_privati().
+ *
+ * As in VTMS's later version, days with no sales and no VAT (the register
+ * sends a zero record on closed days) are skipped.
  */
 class PrivatiDeviceImportParser implements IncomeDataImportParser
 {
-    private const EXPECTED_HEADER = [
+    public const HEADER = [
         'Id invio',
         'Matricola dispositivo',
         'Data e ora rilevazione',
@@ -29,58 +31,85 @@ class PrivatiDeviceImportParser implements IncomeDataImportParser
         "Periodo di inattivita' a",
     ];
 
-    public function parse(string $filePath, Customer $customer): Collection
+    public static function matchesHeader(array $header): bool
     {
-        $rows = $this->loadRows($filePath);
+        // Compare the first 7 columns: the two "inattività" headings vary
+        // in accent/apostrophe between exports.
+        $n = 7;
 
-        $header = array_map('trim', array_shift($rows) ?? []);
-        $this->assertHeader($header);
+        return array_map([TabularFileReader::class, 'headerCell'], array_slice($header, 0, $n))
+            === array_map('mb_strtolower', array_slice(self::HEADER, 0, $n));
+    }
 
-        return collect($rows)
-            ->filter(fn (array $row) => count(array_filter($row, fn ($v) => $v !== null && $v !== '')) > 0)
-            ->map(fn (array $row) => [
+    public function parse(string $filePath, ?string $originalName = null): ParsedFile
+    {
+        $rows = TabularFileReader::rows($filePath, $originalName);
+        $header = array_shift($rows) ?? [];
+
+        if (! self::matchesHeader($header)) {
+            throw new InvalidArgumentException(__('This is not a cash register export: the columns do not match "Id invio; Matricola dispositivo; …".'));
+        }
+
+        $zeroDays = 0;
+        $invalid = 0;
+        $parsed = collect();
+
+        foreach ($rows as $row) {
+            if (count(array_filter($row, fn ($v) => trim((string) $v) !== '')) === 0) {
+                continue;
+            }
+
+            $date = Norm::dateTime($row[2] ?? null);
+            if ($date === null) {
+                $invalid++;
+
+                continue;
+            }
+
+            $sales = Norm::decimal($row[4] ?? null);
+            $vat = Norm::decimal($row[6] ?? null);
+            if ($sales == 0.0 && $vat == 0.0) {
+                $zeroDays++;
+
+                continue;
+            }
+
+            $id = Norm::stripQuotes($row[0] ?? null) ?: null;
+
+            $parsed->push([
                 'source' => IncomeSource::PrivatiDevice,
-                'transaction_date' => Norm::dateTime($row[2] ?? null),
-                'sales_amount' => Norm::decimal($row[4] ?? null),
+                'document_type' => null,
+                'transaction_date' => $date,
+                'sales_amount' => $sales,
                 'taxable_sales' => Norm::decimal($row[5] ?? null),
-                'sale_taxes' => Norm::decimal($row[6] ?? null),
+                'sale_taxes' => $vat,
                 'reference_no' => null,
-                'external_id' => Norm::stripQuotes($row[0] ?? null) ?: null,
+                'external_id' => $id,
+                'fingerprint' => IncomeRow::deviceFingerprint($id),
                 'meta' => [
+                    'format' => 'device_csv',
                     'matricola_dispositivo' => Norm::stripQuotes($row[1] ?? null),
                     'data_trasmissione' => Norm::stripQuotes($row[3] ?? null),
                     'periodo_inattivita_da' => Norm::stripQuotes($row[7] ?? null),
                     'periodo_inattivita_a' => Norm::stripQuotes($row[8] ?? null),
                 ],
-            ])
-            ->filter(fn (array $row) => $row['transaction_date'] !== null)
-            ->values();
-    }
-
-    private function loadRows(string $filePath): array
-    {
-        if (str_ends_with(strtolower($filePath), '.csv')) {
-            $reader = new Csv();
-            $reader->setDelimiter(';');
-            $reader->setEnclosure('"');
-            $spreadsheet = $reader->load($filePath);
-        } else {
-            $spreadsheet = IOFactory::load($filePath);
+            ]);
         }
 
-        return $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
-    }
-
-    private function assertHeader(array $header): void
-    {
-        $header = array_slice($header, 0, count(self::EXPECTED_HEADER));
-
-        if ($header !== self::EXPECTED_HEADER) {
-            throw new InvalidArgumentException(
-                "Privati/device import: header row does not match the expected format.\n".
-                'Expected: '.implode(' | ', self::EXPECTED_HEADER)."\n".
-                'Got: '.implode(' | ', $header)
-            );
+        $warnings = [];
+        if ($zeroDays > 0) {
+            $warnings[] = __(':n days with no sales were skipped.', ['n' => $zeroDays]);
         }
+        if ($invalid > 0) {
+            $warnings[] = __(':n rows without a valid date were skipped.', ['n' => $invalid]);
+        }
+
+        return new ParsedFile(
+            format: 'device_csv',
+            rows: $parsed,
+            deviceSerials: $parsed->pluck('meta.matricola_dispositivo')->filter()->unique()->values()->all(),
+            skipped: $zeroDays + $invalid,
+            warnings: $warnings,
+        );
     }
 }

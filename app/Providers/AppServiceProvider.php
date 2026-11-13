@@ -7,16 +7,24 @@ use App\Listeners\LogAuthenticationActivity;
 use App\Listeners\LogPermissionActivity;
 use App\Models\Setting;
 use App\Policies\ActivityPolicy;
+use Filament\Forms\Components\Field;
 use Filament\Http\Responses\Auth\Contracts\LoginResponse as LoginResponseContract;
+use Filament\Infolists\Components\Entry;
+use Filament\Tables\Columns\Column;
+use Filament\Tables\Filters\BaseFilter;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use RuntimeException;
 use Spatie\Activitylog\Models\Activity;
 
 class AppServiceProvider extends ServiceProvider
@@ -39,10 +47,10 @@ class AppServiceProvider extends ServiceProvider
         // Filament from the field name); route them all through the JSON
         // catalogs so the panel follows the user's language.
         foreach ([
-            \Filament\Forms\Components\Field::class,
-            \Filament\Tables\Columns\Column::class,
-            \Filament\Tables\Filters\BaseFilter::class,
-            \Filament\Infolists\Components\Entry::class,
+            Field::class,
+            Column::class,
+            BaseFilter::class,
+            Entry::class,
         ] as $component) {
             $component::configureUsing(fn ($instance) => $instance->translateLabel());
         }
@@ -53,6 +61,8 @@ class AppServiceProvider extends ServiceProvider
         // shouldBeStrict() — preventAccessingMissingAttributes breaks the
         // column-narrowed selects the dashboard widgets/export service use.
         Model::preventLazyLoading(! $this->app->isProduction());
+
+        $this->guardDestructiveDatabaseCommands();
 
         $this->applyMailSettings();
         $this->applyGoogleOAuthSettings();
@@ -85,6 +95,33 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Named limiters for the customer-facing API.
      */
+    /**
+     * migrate:fresh on the wrong connection once dropped every table in the
+     * real database. Wiping is allowed only on SQLite (tests, scratch
+     * copies); anything else needs DB_ALLOW_DESTRUCTIVE=true for that run:
+     *   DB_ALLOW_DESTRUCTIVE=true php artisan migrate:fresh
+     */
+    private function guardDestructiveDatabaseCommands(): void
+    {
+        $driver = config('database.connections.'.config('database.default').'.driver');
+
+        DB::prohibitDestructiveCommands($driver !== 'sqlite' && ! config('database.allow_destructive'));
+
+        Event::listen(CommandStarting::class, function (CommandStarting $event) use ($driver) {
+            if ($event->command !== 'migrate' || $driver === 'sqlite' || ! config('backup.before_migrate')
+                || $event->input->hasParameterOption('--pretend')) {
+                return;
+            }
+
+            $event->output->writeln('<info>Backing up the database before migrating…</info>');
+            $status = Artisan::call('backup:run', ['--only-db' => true, '--disable-notifications' => true], $event->output);
+
+            if ($status !== 0) {
+                throw new RuntimeException('The pre-migration database backup failed, so nothing was migrated. Fix the backup (php artisan backup:run --only-db), or run once with BACKUP_BEFORE_MIGRATE=false.');
+            }
+        });
+    }
+
     private function registerRateLimiters(): void
     {
         RateLimiter::for('api', fn ($request) => Limit::perMinute(120)->by($request->user()?->id ?: $request->ip()));

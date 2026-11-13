@@ -11,7 +11,8 @@ return new class extends Migration
         Schema::create('fattura_tra_privati_payments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('customer_id')->constrained('customers')->cascadeOnDelete();
-            $table->foreignId('fattura_tra_privati_calculation_id')->constrained('fattura_tra_privati_calculations')->cascadeOnDelete();
+            // Explicit name: the generated one is 71 chars, over MySQL's 64 limit.
+            $table->foreignId('fattura_tra_privati_calculation_id')->constrained('fattura_tra_privati_calculations', 'id', 'ftp_payments_calculation_id_foreign')->cascadeOnDelete();
             $table->unsignedSmallInteger('payment_year');
             $table->enum('status', ['pending', 'paid', 'overdue', 'cancelled'])->default('pending');
             $table->decimal('amount', 15, 2);

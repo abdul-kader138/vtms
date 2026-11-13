@@ -1,8 +1,8 @@
-// Server-rendered strings for the current locale, handed over by
-// resources/views/customer/auth.blade.php. English pages pass an empty
+// Server-rendered strings for the current locale, handed over by the Blade
+// shell (resources/views/customer/auth.blade.php or tax.blade.php). English pages pass an empty
 // catalog, so every key falls back to itself — the same contract as
 // Laravel's __() with JSON translation files.
-const root = document.getElementById('customer-auth-root');
+const root = document.querySelector('[data-translations]');
 const catalog = JSON.parse(root?.dataset.translations || '{}');
 
 export function t(key, replacements = {}) {

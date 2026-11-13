@@ -42,3 +42,22 @@ export async function postJson(path, body) {
 
     return data;
 }
+
+export async function getJson(path) {
+    const response = await fetch(path, {
+        credentials: 'include',
+        headers: { Accept: 'application/json', 'Accept-Language': locale },
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        const error = new Error(data.message || t('Request failed.'));
+        error.status = response.status;
+        error.code = data.code;
+        error.data = data;
+        throw error;
+    }
+
+    return data;
+}

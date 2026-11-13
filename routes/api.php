@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\RegisteredUserController;
 use App\Http\Controllers\Api\V1\Auth\TwoFactorChallengeController;
+use App\Http\Controllers\Api\V1\TaxController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -114,6 +115,15 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::delete('/account', [AccountController::class, 'destroy'])
             ->middleware('throttle:account-security')
             ->name('account.destroy');
+
+        Route::prefix('tax')->name('tax.')->group(function () {
+            Route::get('/years', [TaxController::class, 'years'])->name('years');
+            Route::get('/payments/{type}/{id}/receipt', [TaxController::class, 'receipt'])
+                ->whereNumber('id')
+                ->name('receipt');
+            Route::get('/{year}', [TaxController::class, 'show'])->whereNumber('year')->name('show');
+            Route::get('/{year}/annual-report', [TaxController::class, 'annualReport'])->whereNumber('year')->name('annual-report');
+        });
 
         Route::post('/account/two-factor/setup', [TwoFactorController::class, 'setup'])
             ->middleware('throttle:account-security')

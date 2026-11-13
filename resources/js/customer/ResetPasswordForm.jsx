@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { postJson } from './api';
 import { t } from './i18n';
+import { Icon, Notice, PasswordField } from './ui';
 
 export default function ResetPasswordForm() {
     const [email, setEmail] = useState('');
@@ -43,55 +44,47 @@ export default function ResetPasswordForm() {
 
     if (!token || !email) {
         return (
-            <div className="auth-card">
-                <p className="auth-status auth-status--error">{t('This password reset link is missing its token. Please request a new one.')}</p>
-                <a href="/login" style={{ color: '#a5b4fc' }}>{t('Back to sign in')}</a>
-            </div>
+            <>
+                <div>
+                    <h2>{t('This link is incomplete')}</h2>
+                    <p className="c-sub">{t('This password reset link is missing its token. Please request a new one.')}</p>
+                </div>
+                <a className="c-btn c-btn--block" href="/app/login">{t('Back to sign in')}</a>
+            </>
         );
     }
 
     if (status?.type === 'success') {
         return (
-            <div className="auth-card" style={{ textAlign: 'center' }}>
-                <p className="auth-status auth-status--success">{status.message}</p>
-                <a href="/login" style={{ color: '#a5b4fc' }}>{t('Go to sign in')}</a>
-            </div>
+            <>
+                <div className="c-status-icon" aria-hidden="true"><Icon name="check" /></div>
+                <div>
+                    <h2>{t('Password changed')}</h2>
+                    <p className="c-sub">{status.message}</p>
+                </div>
+                <a className="c-btn c-btn--block" href="/app/login">{t('Go to sign in')}</a>
+            </>
         );
     }
 
     return (
-        <div className="auth-card">
-            <h1 style={{ fontSize: '1.1rem', margin: '0 0 1rem', color: '#fff' }}>{t('Reset your password')}</h1>
-            <form onSubmit={handleSubmit} className="auth-form">
-                <label className="auth-field">
-                    <span>{t('New password')}</span>
-                    <input
-                        type="password"
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        autoComplete="new-password"
-                    />
-                    {errors.password && <small className="auth-error">{errors.password[0]}</small>}
-                </label>
+        <>
+            <div>
+                <h2>{t('Choose a new password')}</h2>
+                <p className="c-sub">{t('For :email', { email })}</p>
+            </div>
+            <form onSubmit={handleSubmit} className="c-form" noValidate>
+                <PasswordField label={t('New password')} error={errors.password} required autoComplete="new-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+                <small className="c-hint" style={{ marginTop: -10 }}>{t('At least 8 characters, with upper and lower case letters and a number.')}</small>
+                <PasswordField label={t('Confirm new password')} required autoComplete="new-password" value={passwordConfirmation} onChange={(e) => setPasswordConfirmation(e.target.value)} />
 
-                <label className="auth-field">
-                    <span>{t('Confirm new password')}</span>
-                    <input
-                        type="password"
-                        required
-                        value={passwordConfirmation}
-                        onChange={(e) => setPasswordConfirmation(e.target.value)}
-                        autoComplete="new-password"
-                    />
-                </label>
+                {errors.email && <Notice type="error">{errors.email[0]}</Notice>}
+                {status && <Notice type={status.type}>{status.message}</Notice>}
 
-                {status && <p className={`auth-status auth-status--${status.type}`}>{status.message}</p>}
-
-                <button type="submit" disabled={submitting}>
-                    {submitting ? t('Resetting…') : t('Reset password')}
+                <button type="submit" className="c-btn c-btn--block" disabled={submitting}>
+                    {submitting ? t('Saving…') : t('Save new password')}
                 </button>
             </form>
-        </div>
+        </>
     );
 }

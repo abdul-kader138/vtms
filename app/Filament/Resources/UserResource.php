@@ -150,6 +150,17 @@ class UserResource extends Resource
                         ->dehydrateStateUsing(fn ($state) => $state ? now() : null),
                 ])->columns(2),
 
+            Section::make(__('Customer portal'))
+                ->description(__('Link this login to a customer so they can see that customer\'s taxes and payments in the customer portal.'))
+                ->schema([
+                    Select::make('customer_id')
+                        ->label(__('Customer'))
+                        ->relationship('customer', 'name')
+                        ->searchable()
+                        ->preload()
+                        ->placeholder(__('Not linked')),
+                ]),
+
             Section::make(__('Roles'))
                 ->description(__('What this user can access in the admin panel.'))
                 ->schema([

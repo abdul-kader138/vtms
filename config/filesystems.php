@@ -38,6 +38,16 @@ return [
             'report' => false,
         ],
 
+        // Backup archives (spatie/laravel-backup). Outside app/private so a
+        // backup never contains the previous backups.
+        'backups' => [
+            'driver' => 'local',
+            'root' => storage_path('app/backups'),
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import TurnstileWidget from './TurnstileWidget';
 import { postJson } from './api';
 import { t } from './i18n';
+import { Field, FieldError, GoogleButton, Notice, PasswordField } from './ui';
 
 const EMPTY_FORM = {
     first_name: '',
@@ -13,7 +14,7 @@ const EMPTY_FORM = {
     marketing_opt_in: false,
 };
 
-export default function RegisterForm({ siteKey, phoneCountries, defaultPhoneCountry }) {
+export default function RegisterForm({ siteKey, googleUrl, phoneCountries, defaultPhoneCountry }) {
     const [form, setForm] = useState({ ...EMPTY_FORM, phone_country: defaultPhoneCountry });
     const [turnstileToken, setTurnstileToken] = useState('');
     const [turnstileKey, setTurnstileKey] = useState(0);
@@ -33,11 +34,7 @@ export default function RegisterForm({ siteKey, phoneCountries, defaultPhoneCoun
         setStatus(null);
 
         try {
-            await postJson('/api/v1/auth/register', {
-                ...form,
-                cf_turnstile_response: turnstileToken,
-            });
-
+            await postJson('/api/v1/auth/register', { ...form, cf_turnstile_response: turnstileToken });
             window.location.assign('/verify-email');
         } catch (error) {
             setErrors(error.errors || {});
@@ -45,36 +42,22 @@ export default function RegisterForm({ siteKey, phoneCountries, defaultPhoneCoun
             // Tokens are single-use, so a rejected submit needs a fresh challenge.
             setTurnstileToken('');
             setTurnstileKey((key) => key + 1);
-        } finally {
             setSubmitting(false);
         }
     }
 
     return (
-        <form onSubmit={handleSubmit} className="auth-form">
-            <div className="auth-field-row">
-                <label className="auth-field">
-                    <span>{t('First name')}</span>
-                    <input required value={form.first_name} onChange={(e) => update('first_name', e.target.value)} autoComplete="given-name" />
-                    {errors.first_name && <small className="auth-error">{errors.first_name[0]}</small>}
-                </label>
-
-                <label className="auth-field">
-                    <span>{t('Last name')}</span>
-                    <input required value={form.last_name} onChange={(e) => update('last_name', e.target.value)} autoComplete="family-name" />
-                    {errors.last_name && <small className="auth-error">{errors.last_name[0]}</small>}
-                </label>
+        <form onSubmit={handleSubmit} className="c-form" noValidate>
+            <div className="c-row">
+                <Field label={t('First name')} error={errors.first_name} required autoComplete="given-name" value={form.first_name} onChange={(e) => update('first_name', e.target.value)} />
+                <Field label={t('Last name')} error={errors.last_name} required autoComplete="family-name" value={form.last_name} onChange={(e) => update('last_name', e.target.value)} />
             </div>
 
-            <label className="auth-field">
-                <span>{t('Email')}</span>
-                <input type="email" required value={form.email} onChange={(e) => update('email', e.target.value)} autoComplete="email" />
-                {errors.email && <small className="auth-error">{errors.email[0]}</small>}
-            </label>
+            <Field label={t('Email')} error={errors.email} type="email" required autoComplete="email" inputMode="email" value={form.email} onChange={(e) => update('email', e.target.value)} />
 
-            <div className="auth-field">
+            <div className="c-field">
                 <label htmlFor="register-phone">{t('Phone (optional)')}</label>
-                <div className="auth-phone-row">
+                <div className="c-phone">
                     <select aria-label={t('Country code')} value={form.phone_country} onChange={(e) => update('phone_country', e.target.value)}>
                         {phoneCountries.map((country) => (
                             <option key={country.code} value={country.code}>{country.name} (+{country.dial})</option>
@@ -87,51 +70,33 @@ export default function RegisterForm({ siteKey, phoneCountries, defaultPhoneCoun
                         onChange={(e) => update('phone', e.target.value)}
                         autoComplete="tel-national"
                         placeholder={phoneExample}
+                        aria-invalid={errors.phone ? 'true' : undefined}
                     />
                 </div>
-                {errors.phone && <small className="auth-error">{errors.phone[0]}</small>}
+                <FieldError errors={errors.phone} />
             </div>
 
-            <label className="auth-field">
-                <span>{t('Password')}</span>
-                <input
-                    type="password"
-                    required
-                    value={form.password}
-                    onChange={(e) => update('password', e.target.value)}
-                    autoComplete="new-password"
-                />
-                {errors.password && <small className="auth-error">{errors.password[0]}</small>}
-            </label>
+            <PasswordField label={t('Password')} error={errors.password} required autoComplete="new-password" value={form.password} onChange={(e) => update('password', e.target.value)} />
+            <small className="c-hint" style={{ marginTop: -10 }}>{t('At least 8 characters, with upper and lower case letters and a number.')}</small>
+            <PasswordField label={t('Confirm password')} required autoComplete="new-password" value={form.password_confirmation} onChange={(e) => update('password_confirmation', e.target.value)} />
 
-            <label className="auth-field">
-                <span>{t('Confirm password')}</span>
-                <input
-                    type="password"
-                    required
-                    value={form.password_confirmation}
-                    onChange={(e) => update('password_confirmation', e.target.value)}
-                    autoComplete="new-password"
-                />
-            </label>
-
-            <label className="auth-checkbox">
-                <input
-                    type="checkbox"
-                    checked={form.marketing_opt_in}
-                    onChange={(e) => update('marketing_opt_in', e.target.checked)}
-                />
+            <label className="c-check">
+                <input type="checkbox" checked={form.marketing_opt_in} onChange={(e) => update('marketing_opt_in', e.target.checked)} />
                 <span>{t('Send me updates and offers')}</span>
             </label>
 
             <TurnstileWidget key={turnstileKey} siteKey={siteKey} onVerify={setTurnstileToken} onExpire={() => setTurnstileToken('')} />
-            {errors.cf_turnstile_response && <small className="auth-error">{errors.cf_turnstile_response[0]}</small>}
+            {errors.cf_turnstile_response && <small className="c-error">{errors.cf_turnstile_response[0]}</small>}
 
-            {status && <p className={`auth-status auth-status--${status.type}`}>{status.message}</p>}
+            {status && <Notice type={status.type}>{status.message}</Notice>}
 
-            <button type="submit" disabled={submitting}>
+            <button type="submit" className="c-btn c-btn--block" disabled={submitting}>
                 {submitting ? t('Creating account…') : t('Create account')}
             </button>
+
+            <p className="c-foot">{t('After you confirm your email, your accountant links the account to your tax records.')}</p>
+
+            <GoogleButton href={googleUrl} />
         </form>
     );
 }

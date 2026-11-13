@@ -14,7 +14,7 @@ class FatturaTraPrivatiPayment extends Model
     ];
 
     protected $fillable = [
-        'customer_id', 'fattura_tra_privati_calculation_id', 'payment_year',
+        'customer_id', 'fattura_tra_privati_calculation_id', 'payment_year', 'quarter',
         'status', 'amount', 'paid_amount', 'paid_date', 'uploaded_pdf', 'due_date',
     ];
 
@@ -22,6 +22,7 @@ class FatturaTraPrivatiPayment extends Model
     {
         return [
             'status' => PaymentStatus::class,
+            'quarter' => 'integer',
             'amount' => 'decimal:2',
             'paid_amount' => 'decimal:2',
             'paid_date' => 'date',

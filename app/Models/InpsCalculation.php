@@ -12,7 +12,7 @@ class InpsCalculation extends Model
     protected $fillable = [
         'customer_id', 'tax_year', 'taxable_income', 'inps_rate', 'inps_amount',
         'discount_percentage', 'discount_amount', 'inps_amount_after_discount',
-        'slab_details', 'calculation_method', 'notes',
+        'slab_details', 'calculation_method', 'notes', 'fixed_amount', 'variable_amount',
     ];
 
     protected function casts(): array
@@ -21,6 +21,8 @@ class InpsCalculation extends Model
             'taxable_income' => 'decimal:2',
             'inps_rate' => 'decimal:2',
             'inps_amount' => 'decimal:2',
+            'fixed_amount' => 'decimal:2',
+            'variable_amount' => 'decimal:2',
             'discount_percentage' => 'decimal:2',
             'discount_amount' => 'decimal:2',
             'inps_amount_after_discount' => 'decimal:2',

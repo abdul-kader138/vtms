@@ -15,7 +15,13 @@ class DatabaseSeeder extends Seeder
             ShieldSeeder::class,
             TaxSettingsSeeder::class,
             InpsRateSlabSeeder::class,
+            InpsContributionRuleSeeder::class,
             DirittoAnnualeBracketSeeder::class,
         ]);
+
+        // Fictional customers, income and portal logins — never in production.
+        if (app()->environment(['local', 'testing'])) {
+            $this->call(DemoTaxDataSeeder::class);
+        }
     }
 }
