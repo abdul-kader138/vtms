@@ -5,28 +5,22 @@
 {{--
     Shared sign-in (/login) in the customer side's Metro look: the green
     line panel on the left, Filament's own form (2FA, device lock, Google)
-    on the right. The panel's primary colour is switched to the line green
-    on this page only.
+    on the right, restyled by components/auth-brand-panel.blade.php.
 --}}
 <x-filament-panels::layout.base :livewire="$livewire">
     @vite('resources/css/customer.css')
     <style>
-        .fi-metro-auth {
-            --primary-50: 229, 242, 233; --primary-100: 204, 230, 213; --primary-200: 160, 210, 178;
-            --primary-300: 103, 182, 133; --primary-400: 40, 150, 85; --primary-500: 0, 135, 62;
-            --primary-600: 0, 122, 55; --primary-700: 0, 101, 45; --primary-800: 0, 82, 37; --primary-900: 0, 64, 29; --primary-950: 0, 40, 18;
-            font-family: var(--font);
-        }
-        .fi-metro-auth .c-auth { min-height: 100vh; }
-        .fi-metro-auth .c-auth-main { background: #fff; }
-        .dark .fi-metro-auth .c-auth-main { background: rgb(var(--gray-950)); }
-        .fi-metro-auth .fi-simple-header { align-items: flex-start; text-align: left; }
-        .fi-metro-auth .fi-simple-header .fi-logo { display: none; }
-        .fi-metro-auth .fi-simple-header-heading { font-size: 28px; font-weight: 750; letter-spacing: -0.02em; }
-        .fi-metro-auth .fi-btn { min-height: 44px; }
-        .fi-metro-auth .fi-input-wrp { min-height: 46px; }
+        .fi-metro-auth { font-family: var(--font); }
         .fi-metro-auth .c-auth-customer { font-size: 14px; color: var(--ink-3); text-align: center; }
+        /* customer.css scopes base type to .c-body; the panel body is .fi-body. */
+        .fi-metro-auth h1, .fi-metro-auth h2 { line-height: 1.15; text-wrap: balance; letter-spacing: -0.02em; margin: 0; }
+        .fi-metro-auth .c-auth-side h1 { letter-spacing: -0.03em; }
+        .fi-metro-auth ::selection { background: var(--line-tint-2); color: var(--ink); }
+        .fi-metro-auth .c-auth-staff { font-size: 14px; color: var(--ink-3); text-align: center; margin-top: -12px; }
+        .fi-metro-auth .c-auth-customer a { color: var(--line-strong); font-weight: 600; text-underline-offset: .2em; }
     </style>
+    {{-- The shared sign-in is a light page whatever the panel's theme. --}}
+    <script>document.documentElement.classList.remove('dark');</script>
 
     <div class="fi-metro-auth fi-simple-layout">
         <div class="c-auth">
@@ -41,12 +35,13 @@
                 </ol>
             </aside>
 
-            <main class="c-auth-main fi-simple-main-ctn">
-                <div class="c-auth-panel fi-simple-main">
+            <main class="c-auth-main">
+                <div class="c-auth-panel">
                     {{ $slot }}
                     <p class="c-auth-customer">
                         {{ __('New customer?') }} <a href="{{ route('customer.register') }}">{{ __('Create your account') }}</a>
                     </p>
+                    <p class="c-auth-staff">{{ __('Office staff: sign in with your work email.') }}</p>
                 </div>
             </main>
         </div>

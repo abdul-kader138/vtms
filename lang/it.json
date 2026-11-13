@@ -682,5 +682,7 @@
     "INPS section: add the INPS office code (codice sede) and the 17-digit codice INPS to the customer — they are on the INPS payment notice.": "Sezione INPS: aggiungi al cliente il codice sede e il codice INPS di 17 cifre, indicati nella comunicazione INPS.",
     "Fixed INPS instalments (AF/CF): copy the period from the INPS payment notice.": "Rate fisse INPS (AF/CF): copia il periodo dalla comunicazione INPS.",
     "Diritto Annuale: add the Chamber of Commerce province (\"codice ente\", e.g. FI, MI) to the customer.": "Diritto Annuale: aggiungi al cliente la provincia della Camera di Commercio (\"codice ente\", es. FI, MI).",
-    "Add the customer's codice fiscale: it goes in the F24 header.": "Aggiungi il codice fiscale del cliente: va nell'intestazione dell'F24."
+    "Add the customer's codice fiscale: it goes in the F24 header.": "Aggiungi il codice fiscale del cliente: va nell'intestazione dell'F24.",
+    "Then next": "Poi",
+    "Office staff: sign in with your work email.": "Personale dello studio: accedi con la tua email di lavoro."
 }

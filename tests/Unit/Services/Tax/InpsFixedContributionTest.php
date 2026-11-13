@@ -124,22 +124,22 @@ class InpsFixedContributionTest extends TestCase
 
     public function test_2026_uses_the_inps_circular_values(): void
     {
-        $rule = \App\Models\InpsContributionRule::where('year', 2026)->where('customer_type', 'artigiani')->first();
+        $rule = InpsContributionRule::where('year', 2026)->where('customer_type', 'artigiani')->first();
 
         $this->assertSame('INPS circ. 14/2026', $rule->source);
         $this->assertEquals(4521.36, $rule->fixedAmount());
-        $this->assertEquals(4611.64, \App\Models\InpsContributionRule::where('year', 2026)->where('customer_type', 'commercianti')->first()->fixedAmount());
+        $this->assertEquals(4611.64, InpsContributionRule::where('year', 2026)->where('customer_type', 'commercianti')->first()->fixedAmount());
         $this->assertNull($this->calc($this->customer('artigiani', 30000, year: 2026), 2026)->notes);
     }
 
     public function test_seeder_replaces_a_carried_forward_row_but_keeps_admin_edits(): void
     {
-        \App\Models\InpsContributionRule::where('year', 2026)->where('customer_type', 'artigiani')->update(['source' => 'CARRIED FORWARD from 2025 — verify', 'minimum_income' => 1]);
-        \App\Models\InpsContributionRule::where('year', 2026)->where('customer_type', 'commercianti')->update(['source' => 'Edited by admin', 'minimum_income' => 2]);
+        InpsContributionRule::where('year', 2026)->where('customer_type', 'artigiani')->update(['source' => 'CARRIED FORWARD from 2025 — verify', 'minimum_income' => 1]);
+        InpsContributionRule::where('year', 2026)->where('customer_type', 'commercianti')->update(['source' => 'Edited by admin', 'minimum_income' => 2]);
 
         $this->seed(InpsContributionRuleSeeder::class);
 
-        $this->assertEquals(18808, (float) \App\Models\InpsContributionRule::where('year', 2026)->where('customer_type', 'artigiani')->value('minimum_income'));
-        $this->assertEquals(2, (float) \App\Models\InpsContributionRule::where('year', 2026)->where('customer_type', 'commercianti')->value('minimum_income'));
+        $this->assertEquals(18808, (float) InpsContributionRule::where('year', 2026)->where('customer_type', 'artigiani')->value('minimum_income'));
+        $this->assertEquals(2, (float) InpsContributionRule::where('year', 2026)->where('customer_type', 'commercianti')->value('minimum_income'));
     }
 }

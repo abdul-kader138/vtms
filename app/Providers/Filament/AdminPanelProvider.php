@@ -17,7 +17,7 @@ use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\NavigationGroup;
-use Filament\Pages\Auth\PasswordReset\RequestPasswordReset;
+use App\Filament\Auth\RequestPasswordReset;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;

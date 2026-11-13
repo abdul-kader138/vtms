@@ -25,7 +25,7 @@ Red is never used as a brand colour (it would collide with "overdue").
 
 ## Type
 
-Schibsted Grotesk Variable, self-hosted via `@fontsource-variable/schibsted-grotesk`; one family for everything. Weights 400 / 600–650 (labels, rows) / 700–750 (headings, amounts). Lining (proportional) figures — the font's tabular set spaces Italian punctuation too widely. Headings tracking −0.02em (display −0.03em). Body 16px; labels 14px.
+Schibsted Grotesk Variable, self-hosted via `@fontsource-variable/schibsted-grotesk`; one family for everything. Weights 400 / 600–650 (labels, rows) / 700–750 (headings, amounts). Lining, proportional figures — deliberately not tabular: Schibsted Grotesk's tabular set gives the thousands and decimal separators a full figure width ("€1, 411. 79"), which reads worse than imperfect digit alignment. Amount columns stay right-aligned with two decimals, so totals still line up. Headings tracking −0.02em (display −0.03em). Body 16px; labels 14px.
 
 ## Components
 

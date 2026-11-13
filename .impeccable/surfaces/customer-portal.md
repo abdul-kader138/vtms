@@ -9,7 +9,7 @@ Audience & job: Italian forfettario sole traders, often on a phone, checking wha
 
 THESIS: The tax year is a metro line and each payment a station — the customer always knows where they are and what the next stop costs. Refuses the category default of stat-card grids over a payments table.
 
-OWN-WORLD: Bob Noorda's Milan Metropolitana signage. White ground, a single M2-green line colour for bands, the line and current position; ink near-black; red reserved for overdue, amber for due soon. Firm grotesque (Schibsted Grotesk, self-hosted), tabular figures, square line-number style code badges, no cards-in-cards, no gradients.
+OWN-WORLD: Bob Noorda's Milan Metropolitana signage. White ground, a single M2-green line colour for bands, the line and current position; ink near-black; red reserved for overdue, amber for due soon. Firm grotesque (Schibsted Grotesk, self-hosted), lining proportional figures in right-aligned two-decimal columns (its tabular set widens separators — see DESIGN.md), square line-number style code badges, no cards-in-cards, no gradients.
 
 STORY: Open → see the next stop (or the overdue total) with amount, date, F24 code → follow the line to see paid and upcoming stops → check the year against the €85k limit → grab documents → read what each charge is.
 

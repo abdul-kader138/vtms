@@ -4,7 +4,9 @@ namespace App\Filament\Auth;
 
 use App\Models\Setting;
 use App\Models\User;
+use App\Rules\ValidPhoneNumber;
 use App\Services\TwoFactorAuthenticationService;
+use App\Support\PhoneNumber;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Component;
 use Filament\Forms\Components\FileUpload;
@@ -13,8 +15,8 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Notifications\Notification;
@@ -61,8 +63,8 @@ class EditProfile extends BaseEditProfile
                                     ]),
                                     $this->getEmailFormComponent(),
                                     TextInput::make('phone')->label(__('Phone number'))->tel()->maxLength(30)
-                                        ->rules([new \App\Rules\ValidPhoneNumber])
-                                        ->dehydrateStateUsing(fn ($state) => \App\Support\PhoneNumber::normalize($state))
+                                        ->rules([new ValidPhoneNumber])
+                                        ->dehydrateStateUsing(fn ($state) => PhoneNumber::normalize($state))
                                         ->helperText(__('Include the country code, for example +39 333 123 4567.')),
                                     TextInput::make('tax_id')->label(__('Tax ID'))->maxLength(100),
                                     Textarea::make('address')->label(__('Address'))->rows(3)->maxLength(1000),

@@ -101,9 +101,22 @@ function NextStop({ stops, summary, year }) {
                         ))}
                         {overdue.length > 4 && <li className="c-hint">{t('and :n more on the line below', { n: overdue.length - 4 })}</li>}
                     </ul>
-                    <p className="c-hint" style={{ marginTop: 12, color: 'var(--overdue-ink)' }}>
+                    <p className="c-hint" style={{ marginTop: 12 }}>
                         {t('Pay as soon as you can: interest and a small penalty grow with time. Your accountant can prepare an F24 with the exact amount.')}
                     </p>
+                    {upcoming[0] && (
+                        <p className="c-next-then">
+                            <strong>{t('Then next')}</strong>
+                            <span>{day(upcoming[0].due_date, { day: 'numeric', month: 'short' })}</span>
+                            <span className="c-code">{upcoming[0].f24_code ?? '—'}</span>
+                            <span>{upcoming[0].description}</span>
+                            <span className="c-num">{eur(upcoming[0].outstanding)}</span>
+                            <span className="c-hint">{t('in :n days', { n: daysUntil(upcoming[0].due_date) })}</span>
+                        </p>
+                    )}
+                    <div className="c-next-actions">
+                        <a className="c-btn c-btn--quiet c-btn--small" href="#how-to-pay">{t('How to pay with F24')}</a>
+                    </div>
                 </div>
                 <div className="c-next-side">
                     <span>{t('Still to pay in :year', { year })}</span>
@@ -245,7 +258,7 @@ function Line({ stops, year, nextKey }) {
 function Today() {
     return (
         <li className="c-today" aria-label={t('Today')}>
-            <span>{t('Today')}</span>
+            <span>{t('Today')}<small>{day(todayIso(), { day: 'numeric', month: 'short' })}</small></span>
             <i aria-hidden="true" />
             <span />
         </li>
@@ -521,7 +534,7 @@ export default function TaxDashboard({ appName, logo }) {
 
     return (
         <>
-            <Band appName={appName} logo={logo} title={name} years={meta.years} year={year} onYear={setYear} loading={loading} />
+            <Band appName={appName} logo={logo} years={meta.years} year={year} onYear={setYear} loading={loading} />
             <main className={`c-page${loading ? ' c-is-loading' : ''}`}>
                 <div className="c-who">
                     <h1>{name}</h1>
@@ -537,7 +550,8 @@ export default function TaxDashboard({ appName, logo }) {
 
                 {data.warnings.length > 0 && (
                     <div className="c-notices">
-                        {data.warnings.map((w) => <Notice key={w.message} type={w.level}>{w.message}</Notice>)}
+                        {/* Amber is reserved for "due soon"; advisories use the info tint. */}
+                        {data.warnings.map((w) => <Notice key={w.message} type={w.level === 'warning' ? 'info' : w.level}>{w.message}</Notice>)}
                     </div>
                 )}
 

@@ -17,6 +17,8 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
  */
 class EmailVerificationPrompt extends BasePrompt
 {
+    protected static string $layout = 'filament.auth.metro-layout';
+
     protected function sendEmailVerificationNotification(MustVerifyEmail $user): void
     {
         if ($user->hasVerifiedEmail()) {
