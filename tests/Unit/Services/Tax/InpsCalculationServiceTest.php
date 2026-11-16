@@ -97,4 +97,24 @@ class InpsCalculationServiceTest extends TestCase
         $this->assertEqualsWithDelta(0.0, (float) $inps->inps_amount, 0.001);
         $this->assertEqualsWithDelta(0.0, (float) $inps->inps_amount_after_discount, 0.001);
     }
+
+    public function test_gestione_separata_without_other_pension_coverage_uses_the_higher_rate(): void
+    {
+        $customer = $this->makeCustomer(['customer_type' => 'gestione_separata', 'coefficient_of_profitability' => 78.00, 'inps_discount_eligible' => false]);
+        $tc = $this->fakeTaxCalculation($customer, 2025, 10000);
+
+        $inps = $this->service->calculateForYear($customer, 2025, $tc);
+
+        $this->assertEqualsWithDelta(2607.00, (float) $inps->inps_amount, 0.001);
+    }
+
+    public function test_gestione_separata_with_other_pension_coverage_uses_the_reduced_rate(): void
+    {
+        $customer = $this->makeCustomer(['customer_type' => 'gestione_separata', 'coefficient_of_profitability' => 78.00, 'inps_discount_eligible' => false, 'gs_other_pension' => true]);
+        $tc = $this->fakeTaxCalculation($customer, 2025, 10000);
+
+        $inps = $this->service->calculateForYear($customer, 2025, $tc);
+
+        $this->assertEqualsWithDelta(2400.00, (float) $inps->inps_amount, 0.001);
+    }
 }

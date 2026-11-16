@@ -44,7 +44,14 @@ class InpsRateSlabResource extends Resource
                 ->label(__('Customer type'))
                 ->options(collect(CustomerType::cases())->mapWithKeys(fn (CustomerType $c) => [$c->value => $c->label()]))
                 ->native(false)
+                ->live()
                 ->helperText(__('Leave empty to apply to all customer types.')),
+            Select::make('gs_other_pension')
+                ->label(__('Other pension coverage (Gestione Separata only)'))
+                ->options([0 => __('No'), 1 => __('Yes — pensioner or insured elsewhere')])
+                ->native(false)
+                ->visible(fn ($get) => $get('customer_type') === CustomerType::GestioneSeparata->value)
+                ->helperText(__('Leave empty to apply regardless of the flag.')),
             TextInput::make('income_from')->label(__('Income from'))->numeric()->required()->prefix('€'),
             TextInput::make('income_to')->label(__('Income to'))->numeric()->prefix('€')->helperText(__('Leave empty for unbounded.')),
             TextInput::make('inps_rate')->label(__('INPS rate (%)'))->numeric()->required()->suffix('%'),
@@ -60,6 +67,7 @@ class InpsRateSlabResource extends Resource
             ->columns([
                 TextColumn::make('slab_year')->label(__('Year'))->sortable(),
                 TextColumn::make('customer_type')->label(__('Type'))->badge()->formatStateUsing(fn ($state) => $state?->label() ?? __('All types'))->sortable(),
+                IconColumn::make('gs_other_pension')->label(__('Other coverage'))->boolean()->placeholder('—'),
                 TextColumn::make('income_from')->label(__('From'))->money('EUR')->sortable(),
                 TextColumn::make('income_to')->label(__('To'))->money('EUR')->placeholder(__('Unbounded'))->sortable(),
                 TextColumn::make('inps_rate')->label(__('Rate'))->suffix('%')->sortable(),

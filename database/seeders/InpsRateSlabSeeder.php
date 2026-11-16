@@ -28,12 +28,17 @@ class InpsRateSlabSeeder extends Seeder
             ['slab_year' => 2025, 'customer_type' => CustomerType::Artigiani, 'income_from' => 100001, 'income_to' => null, 'inps_rate' => 25.25, 'fixed_amount' => null, 'description' => 'Artigiani 2025 — top bracket'],
             ['slab_year' => 2024, 'customer_type' => CustomerType::Artigiani, 'income_from' => 1, 'income_to' => 18555, 'inps_rate' => 21.00, 'fixed_amount' => null, 'description' => 'Artigiani 2024 — flat rate'],
 
-            ['slab_year' => 2025, 'customer_type' => CustomerType::GestioneSeparata, 'income_from' => 0, 'income_to' => 200000, 'inps_rate' => 21.50, 'fixed_amount' => null, 'description' => 'Gestione Separata 2025 — flat rate'],
+            // Two rates by law (INPS circolare n. 27 del 30/01/2025): 26.07%
+            // for a professional with no other mandatory pension coverage,
+            // 24% for one who is a pensioner or already insured elsewhere
+            // (Customer::gs_other_pension).
+            ['slab_year' => 2025, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => false, 'income_from' => 0, 'income_to' => 200000, 'inps_rate' => 26.07, 'fixed_amount' => null, 'description' => 'Gestione Separata 2025 — no other pension coverage (circolare INPS 27/2025)'],
+            ['slab_year' => 2025, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => true, 'income_from' => 0, 'income_to' => 200000, 'inps_rate' => 24.00, 'fixed_amount' => null, 'description' => 'Gestione Separata 2025 — with other pension coverage (circolare INPS 27/2025)'],
         ];
 
         foreach ($rows as $row) {
             InpsRateSlab::updateOrCreate(
-                ['slab_year' => $row['slab_year'], 'customer_type' => $row['customer_type'], 'income_from' => $row['income_from']],
+                ['slab_year' => $row['slab_year'], 'customer_type' => $row['customer_type'], 'income_from' => $row['income_from'], 'gs_other_pension' => $row['gs_other_pension'] ?? null],
                 $row + ['is_active' => true]
             );
         }
@@ -66,7 +71,7 @@ class InpsRateSlabSeeder extends Seeder
 
             InpsRateSlab::where('customer_type', $type)->where('slab_year', $latest)->get()
                 ->each(fn (InpsRateSlab $slab) => InpsRateSlab::firstOrCreate(
-                    ['slab_year' => $year, 'customer_type' => $type, 'income_from' => $slab->income_from],
+                    ['slab_year' => $year, 'customer_type' => $type, 'income_from' => $slab->income_from, 'gs_other_pension' => $slab->gs_other_pension],
                     [
                         'income_to' => $slab->income_to,
                         'inps_rate' => $slab->inps_rate,

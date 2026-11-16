@@ -118,6 +118,16 @@ class TaxOverviewService
             'amount' => null,
             'note' => __('An open but inactive Partita IVA keeps generating INPS/Diritto Annuale bills — close it formally when the business ends.'),
         ];
+        $items[] = [
+            'label' => __('Lost personal tax deductions'),
+            'amount' => null,
+            'note' => __('The flat-rate imposta sostitutiva has no deductions for medical expenses, mortgage interest, dependants or other IRPEF reliefs.'),
+        ];
+        $items[] = [
+            'label' => __('INPS is due even with no income'),
+            'amount' => null,
+            'note' => __('Artigiani and Commercianti owe the fixed INPS instalments regardless of revenue — Gestione Separata only pays on income actually earned.'),
+        ];
 
         return $items;
     }

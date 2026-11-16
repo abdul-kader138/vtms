@@ -12,7 +12,7 @@ class InpsRateSlab extends Model
     use LogsActivity;
 
     protected $fillable = [
-        'slab_year', 'customer_type', 'income_from', 'income_to',
+        'slab_year', 'customer_type', 'gs_other_pension', 'income_from', 'income_to',
         'inps_rate', 'fixed_amount', 'description', 'is_active',
     ];
 
@@ -20,6 +20,7 @@ class InpsRateSlab extends Model
     {
         return [
             'customer_type' => CustomerType::class,
+            'gs_other_pension' => 'boolean',
             'income_from' => 'decimal:2',
             'income_to' => 'decimal:2',
             'inps_rate' => 'decimal:2',

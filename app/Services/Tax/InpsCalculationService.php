@@ -29,12 +29,20 @@ class InpsCalculationService
                 $q->where('customer_type', $customer->customer_type)
                     ->orWhereNull('customer_type');
             })
+            ->where(function ($q) use ($customer) {
+                // Gestione Separata only: a slab pinned to this customer's
+                // gs_other_pension flag takes precedence over one that
+                // applies regardless (null) — see InpsRateSlabSeeder.
+                $q->where('gs_other_pension', (bool) $customer->gs_other_pension)
+                    ->orWhereNull('gs_other_pension');
+            })
             ->orderBy('income_from')
             ->get()
-            // A type-specific slab takes precedence over a generic (null-type)
-            // slab starting at the same income_from.
+            // Most specific wins: a slab pinned to this customer's exact
+            // type and gs_other_pension flag beats one that applies more
+            // generically, at the same income_from.
             ->groupBy('income_from')
-            ->map(fn ($group) => $group->sortBy(fn ($s) => $s->customer_type === null ? 1 : 0)->first())
+            ->map(fn ($group) => $group->sortBy(fn ($s) => ($s->customer_type === null ? 2 : 0) + ($s->gs_other_pension === null ? 1 : 0))->first())
             ->sortBy('income_from')
             ->values();
 
