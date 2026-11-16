@@ -22,14 +22,16 @@ return new class extends Migration
 
         Schema::table('inps_rate_slabs', function (Blueprint $table) {
             $table->dropUnique(['slab_year', 'customer_type', 'income_from']);
-            $table->unique(['slab_year', 'customer_type', 'income_from', 'gs_other_pension']);
+            // Explicit short name: the auto-generated one (table + all 4
+            // column names + "_unique") exceeds MySQL's 64-char identifier limit.
+            $table->unique(['slab_year', 'customer_type', 'income_from', 'gs_other_pension'], 'inps_rate_slabs_year_type_from_gs_unique');
         });
     }
 
     public function down(): void
     {
         Schema::table('inps_rate_slabs', function (Blueprint $table) {
-            $table->dropUnique(['slab_year', 'customer_type', 'income_from', 'gs_other_pension']);
+            $table->dropUnique('inps_rate_slabs_year_type_from_gs_unique');
             $table->unique(['slab_year', 'customer_type', 'income_from']);
             $table->dropColumn('gs_other_pension');
         });
