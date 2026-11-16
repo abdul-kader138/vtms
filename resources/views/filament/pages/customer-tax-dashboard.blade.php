@@ -85,6 +85,9 @@
         </div>
     @endforeach
 
+    {{-- Ancillary costs not covered by the official calculations above --}}
+    @include('filament.pages.partials.hidden-costs', ['items' => $overview['hidden_costs']])
+
     {{-- Payment totals across all five payment types --}}
     <div class="vt-stats">
         @include('filament.pages.partials.stat', ['label' => __('Outstanding'), 'value' => $summary['total_due'], 'tone' => 'primary'])

@@ -155,6 +155,11 @@ class Customer extends Model
         return $this->hasMany(FatturaTraPrivatiPayment::class);
     }
 
+    public function foreignServicePurchases(): HasMany
+    {
+        return $this->hasMany(ForeignServicePurchase::class);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()

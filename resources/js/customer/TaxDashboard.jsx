@@ -379,7 +379,7 @@ function Figures({ data }) {
 function Documents({ data }) {
     const receipts = data.payments.filter((p) => p.receipt_url);
 
-    if (!data.annual_report_url && receipts.length === 0) {
+    if (!data.annual_report_url && !data.redditi_report_url && receipts.length === 0) {
         return <p className="c-empty">{t('No documents for :year yet. The income statement appears once the year is calculated.', { year: data.year })}</p>;
     }
 
@@ -394,6 +394,15 @@ function Documents({ data }) {
                     </a>
                 </li>
             )}
+            {data.redditi_report_url && (
+                <li>
+                    <a href={data.redditi_report_url}>
+                        <Icon name="file" />
+                        <span>{t('Tax return draft :year', { year: data.year })}<small>{t('Quadro LM/RR · PDF · not the official filing')}</small></span>
+                        <Icon name="download" />
+                    </a>
+                </li>
+            )}
             {receipts.map((p) => (
                 <li key={`${p.type}-${p.id}`}>
                     <a href={p.receipt_url}>
@@ -401,6 +410,27 @@ function Documents({ data }) {
                         <span>{t('Receipt · :what', { what: p.description })}<small>{p.paid_date ? t('paid :date', { date: day(p.paid_date) }) : day(p.due_date)}</small></span>
                         <Icon name="download" />
                     </a>
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+function HiddenCosts({ data }) {
+    const items = data.hidden_costs || [];
+    if (items.length === 0) {
+        return null;
+    }
+
+    return (
+        <ul className="c-docs c-hidden-costs">
+            {items.map((item, i) => (
+                <li key={i}>
+                    <span>
+                        {item.label}
+                        <small>{item.note}</small>
+                    </span>
+                    {item.amount !== null && <strong>{eur(item.amount)}</strong>}
                 </li>
             ))}
         </ul>
@@ -635,6 +665,11 @@ export default function TaxDashboard({ appName, logo, view = 'tax' }) {
                         <section aria-labelledby="explain-heading">
                             <div className="c-section-head"><h2 id="explain-heading">{t('What each charge is')}</h2></div>
                             <Explanations stops={stops} />
+                        </section>
+
+                        <section aria-labelledby="hidden-costs-heading">
+                            <div className="c-section-head"><h2 id="hidden-costs-heading">{t('Hidden costs')}</h2></div>
+                            <HiddenCosts data={data} />
                         </section>
                     </div>
                 </div>

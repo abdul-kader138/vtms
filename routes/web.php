@@ -8,6 +8,7 @@ use App\Http\Controllers\Auth\StaffVerifyEmailController;
 use App\Http\Controllers\F24SheetController;
 use App\Http\Controllers\IncomeImportSampleController;
 use App\Http\Controllers\LocaleController;
+use App\Http\Controllers\RedditiReportController;
 use App\Http\Controllers\TaxCalendarFeedController;
 use App\Http\Controllers\TaxPaymentReceiptController;
 use Filament\Facades\Filament;
@@ -150,6 +151,12 @@ Route::get('/customers/{customer}/tax/payments/{type}/{id}/receipt', TaxPaymentR
 Route::get('/customers/{customer}/tax/{year}/annual-report', AnnualTaxReportController::class)
     ->middleware(['signed', 'auth'])
     ->name('tax.annual-report.download');
+
+// Draft "Redditi Persone Fisiche" PDF (Quadro LM/RR) — see
+// App\Services\Tax\RedditiReportService. Same gating as the receipt route above.
+Route::get('/customers/{customer}/tax/{year}/redditi-report', RedditiReportController::class)
+    ->middleware(['signed', 'auth'])
+    ->name('tax.redditi-report.download');
 
 // Sample files for the income importer (invoices list / cash register as
 // CSV or Excel, an e-invoice XML) — staff only.

@@ -25,7 +25,10 @@ class TaxOverviewService
 {
     public const PAYMENT_TYPES = ['tax', 'inps', 'inail', 'diritto_annuale', 'fattura_tra_privati'];
 
-    public function __construct(private readonly IncomePredictionService $predictionService) {}
+    public function __construct(
+        private readonly IncomePredictionService $predictionService,
+        private readonly ForeignServiceIvaService $foreignServiceIva,
+    ) {}
 
     public function build(Customer $customer, int $year): array
     {
@@ -44,7 +47,79 @@ class TaxOverviewService
             'payments' => $payments,
             'summary' => $this->summary($payments),
             'warnings' => [...$this->eligibilityWarnings($customer, $year, $tax), ...$this->collectionWarnings($customer, $year), ...$this->stampDutyWarnings($customer, $year)],
+            'hidden_costs' => $this->hiddenCosts($customer, $year, $tax),
         ];
+    }
+
+    /**
+     * Ancillary costs Regime Forfettario doesn't show on the tax
+     * calculation itself: things to budget for alongside the official
+     * payments above. Some figures are computed from recorded data (the
+     * foreign-service IVA, the first/second-year lump sum); the rest are
+     * fixed educational reminders.
+     *
+     * @return list<array{label: string, amount: ?float, note: string}>
+     */
+    public function hiddenCosts(Customer $customer, int $year, ?TaxCalculation $tax): array
+    {
+        $items = [];
+
+        $foreignTotal = $this->foreignServiceIva->totalPurchases($customer, $year);
+        if ($foreignTotal > 0) {
+            $items[] = [
+                'label' => __('Reverse-charge IVA on foreign digital services'),
+                'amount' => $this->foreignServiceIva->ivaOwed($customer, $year),
+                'note' => __('Non-refundable under Regime Forfettario — self-assessed via F24 (code 6099, confirm with an accountant) on €:total of purchases from foreign providers (Facebook, Google, Canva...).', [
+                    'total' => number_format($foreignTotal, 2, ',', '.'),
+                ]),
+            ];
+        }
+
+        if (TaxRules::isLaw() && $tax !== null && (float) $tax->balance_payment > 0 && $customer->business_start_date?->year === $year) {
+            $balancePayment = TaxPayment::where('customer_id', $customer->id)
+                ->where('tax_year', $year)->where('payment_type', TaxPaymentType::Balance)
+                ->first();
+
+            if ($balancePayment) {
+                $sameDayTotal = TaxPayment::where('customer_id', $customer->id)->where('due_date', $balancePayment->due_date)->sum('amount');
+
+                $items[] = [
+                    'label' => __('Second-year lump sum'),
+                    'amount' => round((float) $sameDayTotal, 2),
+                    'note' => __('The first year\'s balance and the following year\'s first advance both fall on :date — budget for the combined amount, not just the balance.', [
+                        'date' => $balancePayment->due_date->format('d/m/Y'),
+                    ]),
+                ];
+            }
+        }
+
+        $items[] = [
+            'label' => __('Non-deductible IVA on purchases'),
+            'amount' => null,
+            'note' => __('Regime Forfettario has no IVA to reclaim on business purchases — it is a real cost, unlike for VAT-registered businesses.'),
+        ];
+        $items[] = [
+            'label' => __('Accountant / bookkeeping fees'),
+            'amount' => null,
+            'note' => __('Budget for a recurring fee even in a simplified regime.'),
+        ];
+        $items[] = [
+            'label' => __('Local taxes and fixed services'),
+            'amount' => null,
+            'note' => __('TARI, shop-sign tax (insegne), RAI licence fee, SIAE where applicable, PEC, digital signature, invoicing software, POS/cash register fees.'),
+        ];
+        $items[] = [
+            'label' => __('Late-payment penalties and interest'),
+            'amount' => null,
+            'note' => __('Ravvedimento operoso increases with every deadline missed — see the late-payment cost on each overdue payment.'),
+        ];
+        $items[] = [
+            'label' => __('Closing the Partita IVA'),
+            'amount' => null,
+            'note' => __('An open but inactive Partita IVA keeps generating INPS/Diritto Annuale bills — close it formally when the business ends.'),
+        ];
+
+        return $items;
     }
 
     /**

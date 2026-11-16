@@ -122,6 +122,7 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             $this->importIncomeDataAction(),
             $this->f24SheetAction(),
             $this->annualTaxReportAction(),
+            $this->redditiReportAction(),
         ];
     }
 
@@ -201,6 +202,20 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             ->color('gray')
             ->visible(fn () => $this->getTaxCalculation() !== null)
             ->url(fn () => URL::temporarySignedRoute('tax.annual-report.download', now()->addMinutes(30), [
+                'customer' => $this->customerRecord->id,
+                'year' => $this->selectedYear,
+            ]))
+            ->openUrlInNewTab();
+    }
+
+    public function redditiReportAction(): Action
+    {
+        return Action::make('redditiReport')
+            ->label(__('Redditi PF draft (Quadro LM/RR)'))
+            ->icon('heroicon-o-document-chart-bar')
+            ->color('gray')
+            ->visible(fn () => $this->getTaxCalculation() !== null)
+            ->url(fn () => URL::temporarySignedRoute('tax.redditi-report.download', now()->addMinutes(30), [
                 'customer' => $this->customerRecord->id,
                 'year' => $this->selectedYear,
             ]))

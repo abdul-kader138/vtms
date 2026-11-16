@@ -4,12 +4,15 @@ namespace Tests\Unit\Services\Tax;
 
 use App\Enums\TaxPaymentType;
 use App\Models\Customer;
+use App\Models\ForeignServicePurchase;
 use App\Models\IncomeData;
 use App\Models\InpsPayment;
+use App\Models\Setting;
 use App\Models\TaxCalculation;
 use App\Models\TaxPayment;
 use App\Services\Tax\TaxCalculationOrchestrator;
 use App\Services\Tax\TaxOverviewService;
+use App\Support\Tax\TaxRules;
 use Database\Seeders\InpsRateSlabSeeder;
 use Database\Seeders\TaxSettingsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -162,5 +165,39 @@ class TaxOverviewServiceTest extends TestCase
         $this->income('2025-01-10', 1000);
 
         $this->assertSame([], app(TaxOverviewService::class)->eligibilityWarnings($this->customer, 2025, null));
+    }
+
+    public function test_hidden_costs_include_the_non_refundable_foreign_service_iva(): void
+    {
+        ForeignServicePurchase::create(['customer_id' => $this->customer->id, 'purchase_date' => '2025-03-01', 'provider' => 'Facebook Ads', 'amount' => 200]);
+
+        $items = app(TaxOverviewService::class)->hiddenCosts($this->customer, 2025, null);
+        $foreign = collect($items)->firstWhere('label', __('Reverse-charge IVA on foreign digital services'));
+
+        $this->assertNotNull($foreign);
+        $this->assertEqualsWithDelta(44.0, $foreign['amount'], 0.001);
+    }
+
+    public function test_hidden_costs_always_include_the_static_educational_reminders(): void
+    {
+        $items = app(TaxOverviewService::class)->hiddenCosts($this->customer, 2025, null);
+
+        $this->assertGreaterThanOrEqual(5, count($items));
+        $this->assertTrue(collect($items)->contains(fn ($i) => $i['amount'] === null));
+    }
+
+    public function test_hidden_costs_flag_the_second_year_lump_sum_under_law_rules(): void
+    {
+        Setting::set(TaxRules::SETTING, TaxRules::LAW, 'tax');
+        $customer = Customer::create(['name' => 'Startup', 'customer_type' => 'artigiani', 'coefficient_of_profitability' => 67, 'tax_rate' => 5, 'business_start_date' => '2025-01-15']);
+
+        IncomeData::create(['customer_id' => $customer->id, 'source' => 'sdi_fattura', 'transaction_date' => '2025-03-01', 'collected_on' => '2025-03-01', 'sales_amount' => 20000, 'taxable_sales' => 20000, 'sale_taxes' => 0, 'tax_year' => 2025]);
+        app(TaxCalculationOrchestrator::class)->runForCustomerAndYear($customer, 2025);
+
+        $items = app(TaxOverviewService::class)->hiddenCosts($customer, 2025, TaxCalculation::where('customer_id', $customer->id)->where('tax_year', 2025)->first());
+        $lumpSum = collect($items)->firstWhere('label', __('Second-year lump sum'));
+
+        $this->assertNotNull($lumpSum);
+        $this->assertGreaterThan(0, $lumpSum['amount']);
     }
 }

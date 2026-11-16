@@ -14,6 +14,7 @@ use App\Services\Tax\F24SheetService;
 use App\Services\Tax\PaymentCalendarService;
 use App\Services\Tax\PaymentRegistry;
 use App\Services\Tax\RavvedimentoService;
+use App\Services\Tax\RedditiReportService;
 use App\Services\Tax\TaxOverviewService;
 use App\Support\Tax\AtecoGroup;
 use App\Support\Tax\F24Code;
@@ -117,8 +118,10 @@ class TaxController extends Controller
             'prediction' => $overview['prediction'],
             'summary' => $overview['summary'],
             'warnings' => $overview['warnings'],
+            'hidden_costs' => $overview['hidden_costs'],
             'payments' => $payments,
             'annual_report_url' => $tax ? route('api.v1.tax.annual-report', ['year' => $year]) : null,
+            'redditi_report_url' => $tax ? route('api.v1.tax.redditi-report', ['year' => $year]) : null,
         ]);
     }
 
@@ -144,6 +147,30 @@ class TaxController extends Controller
         }
 
         return Pdf::loadView('pdf.tax.annual-report', $data)->download($service->filename($customer, $year));
+    }
+
+    #[OA\Get(
+        path: '/api/v1/tax/{year}/redditi-report',
+        summary: 'Download the draft Redditi Persone Fisiche PDF (Quadro LM/RR)',
+        security: [['sanctumSession' => []]],
+        tags: ['Tax'],
+        parameters: [new OA\Parameter(name: 'year', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 200, description: 'PDF', content: new OA\MediaType(mediaType: 'application/pdf')),
+            new OA\Response(response: 404, description: 'Not calculated for this year'),
+        ],
+    )]
+    public function redditiReport(Request $request, int $year, RedditiReportService $service): Response
+    {
+        $customer = $this->customerFor($request);
+
+        try {
+            $data = $service->build($customer, $year);
+        } catch (RuntimeException) {
+            abort(404, __('No tax calculation exists for :year yet.', ['year' => $year]));
+        }
+
+        return Pdf::loadView('pdf.tax.redditi', $data)->download($service->filename($customer, $year));
     }
 
     #[OA\Get(

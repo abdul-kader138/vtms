@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Enums\TaxPaymentType;
 use App\Models\Customer;
+use App\Models\ForeignServicePurchase;
 use App\Models\IncomeData;
 use App\Models\InpsPayment;
 use App\Models\TaxPayment;
@@ -104,6 +105,12 @@ class DemoTaxDataSeeder extends Seeder
         $this->seedIncome($professionista, $previous, 11, 2100, startMonth: 2);
         $this->seedIncome($professionista, $current, $monthsSoFar, 2400);
 
+        // A couple of foreign digital-service purchases per customer, so the
+        // non-refundable reverse-charge IVA shows up in the hidden-costs panel.
+        $this->seedForeignServicePurchases($artigiano, $current);
+        $this->seedForeignServicePurchases($commerciante, $current);
+        $this->seedForeignServicePurchases($professionista, $current);
+
         // Year before last for the artigiano, entered by hand (as if carried
         // over from the old system). Its advances toward the previous year
         // are then subtracted from that year's calculated balance.
@@ -178,6 +185,19 @@ class DemoTaxDataSeeder extends Seeder
             'tax_year' => $date->year,
             'meta' => ['demo' => true],
         ]);
+    }
+
+    private function seedForeignServicePurchases(Customer $customer, int $year): void
+    {
+        foreach ([['Facebook Ads', 'Boosted posts', 45.00, 3], ['Google Workspace', 'Monthly subscription', 18.00, 10]] as [$provider, $description, $amount, $day]) {
+            ForeignServicePurchase::create([
+                'customer_id' => $customer->id,
+                'purchase_date' => Carbon::create($year, 2, $day),
+                'provider' => $provider,
+                'description' => $description,
+                'amount' => $amount,
+            ]);
+        }
     }
 
     private function seedHistoricalYear(Customer $customer, int $year): void
