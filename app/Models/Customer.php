@@ -18,7 +18,7 @@ class Customer extends Model
     protected $fillable = [
         'name', 'company', 'vat_no', 'ateco_code', 'address', 'city', 'phone', 'email',
         'customer_type', 'coefficient_of_profitability', 'tax_rate', 'startup_rate_eligible',
-        'business_start_date', 'inps_discount_eligible',
+        'business_start_date', 'inps_discount_eligible', 'inps_discount_request_date', 'inps_discount_source',
         'annual_revenue_limit', 'employee_cost_limit',
         'inail_ateco_code', 'inail_rate', 'inail_minimum_payment',
         'chamber_section', 'chamber_surcharge',
@@ -33,6 +33,7 @@ class Customer extends Model
             'tax_rate' => 'decimal:2',
             'business_start_date' => 'date',
             'inps_discount_eligible' => 'boolean',
+            'inps_discount_request_date' => 'date',
             'startup_rate_eligible' => 'boolean',
             'annual_revenue_limit' => 'decimal:2',
             'employee_cost_limit' => 'decimal:2',
@@ -88,6 +89,21 @@ class Customer extends Model
         return $this->startup_rate_eligible && $this->business_start_date
             ? $this->business_start_date->year + self::STARTUP_YEARS - 1
             : null;
+    }
+
+    /**
+     * Whether inps_discount_eligible is backed by real evidence (a filed
+     * domanda di riduzione contributiva, an INPS prospetto di calcolo, a
+     * Cassetto Previdenziale screenshot, ...) rather than an assumption —
+     * same "CARRIED FORWARD" idiom as InpsContributionRule::isVerified().
+     * Not enforced anywhere; it's a UI/reporting signal so an unverified
+     * flag doesn't get mistaken for a confirmed one.
+     */
+    public function inpsDiscountVerified(): bool
+    {
+        return $this->inps_discount_eligible
+            && $this->inps_discount_source !== null
+            && ! str_starts_with($this->inps_discount_source, 'INFERRED');
     }
 
     public function hasTaxCalculations(): bool

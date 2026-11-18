@@ -22,6 +22,9 @@ class DatabaseSeeder extends Seeder
         // Fictional customers, income and portal logins — never in production.
         if (app()->environment(['local', 'testing'])) {
             $this->call(DemoTaxDataSeeder::class);
+            // Real client, built from docs/ (gitignored source documents) —
+            // skips itself automatically when docs/ isn't present.
+            $this->call(ClientSolimanCommerciantiSeeder::class);
         }
     }
 }

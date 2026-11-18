@@ -177,8 +177,19 @@ class CustomerResource extends Resource
                     Toggle::make('inps_discount_eligible')
                         ->label(__('INPS 35% reduction'))
                         ->inline(false)
+                        ->live()
                         ->visible(fn (Get $get): bool => in_array($get('customer_type'), [CustomerType::Commercianti->value, CustomerType::Artigiani->value], true))
-                        ->helperText(__('Artigiani/Commercianti in Regime Forfettario who applied for it. The percentage is set in Tax Settings.')),
+                        ->helperText(__('Artigiani/Commercianti in Regime Forfettario who applied for it. The percentage is set in Tax Settings. Never automatic — INPS only grants it on an explicit domanda di riduzione contributiva.')),
+                    DatePicker::make('inps_discount_request_date')
+                        ->label(__('Request filed on'))
+                        ->native(false)
+                        ->visible(fn (Get $get): bool => (bool) $get('inps_discount_eligible') && in_array($get('customer_type'), [CustomerType::Commercianti->value, CustomerType::Artigiani->value], true))
+                        ->helperText(__('Date the domanda di riduzione contributiva was filed with INPS, if known.')),
+                    TextInput::make('inps_discount_source')
+                        ->label(__('Evidence'))
+                        ->maxLength(255)
+                        ->visible(fn (Get $get): bool => (bool) $get('inps_discount_eligible') && in_array($get('customer_type'), [CustomerType::Commercianti->value, CustomerType::Artigiani->value], true))
+                        ->helperText(__('Where this was confirmed — e.g. "Cassetto Previdenziale, checked 18/11/2026". Leave starting with "INFERRED" if only assumed from payment amounts, not yet confirmed.')),
                     TextInput::make('inps_office_code')
                         ->label(__('INPS office code (codice sede)'))
                         ->maxLength(4)

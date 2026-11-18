@@ -19,6 +19,7 @@ use Illuminate\Database\Seeder;
 class InpsContributionRuleSeeder extends Seeder
 {
     private const YEARS = [
+        2023 => ['minimum_income' => 17504, 'threshold' => 52190, 'maximum_income' => 113520, 'source' => 'INPS circ. 19/2023'],
         2024 => ['minimum_income' => 18415, 'threshold' => 55008, 'maximum_income' => 119650, 'source' => 'INPS circ. 33/2024'],
         2025 => ['minimum_income' => 18555, 'threshold' => 55448, 'maximum_income' => 120607, 'source' => 'INPS circ. 38/2025'],
         2026 => ['minimum_income' => 18808, 'threshold' => 56224, 'maximum_income' => 122295, 'source' => 'INPS circ. 14/2026'],

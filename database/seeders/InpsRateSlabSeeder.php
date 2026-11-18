@@ -28,12 +28,23 @@ class InpsRateSlabSeeder extends Seeder
             ['slab_year' => 2025, 'customer_type' => CustomerType::Artigiani, 'income_from' => 100001, 'income_to' => null, 'inps_rate' => 25.25, 'fixed_amount' => null, 'description' => 'Artigiani 2025 — top bracket'],
             ['slab_year' => 2024, 'customer_type' => CustomerType::Artigiani, 'income_from' => 1, 'income_to' => 18555, 'inps_rate' => 21.00, 'fixed_amount' => null, 'description' => 'Artigiani 2024 — flat rate'],
 
-            // Two rates by law (INPS circolare n. 27 del 30/01/2025): 26.07%
+            // Two rates by law each year: the "no other pension coverage"
+            // rate (25% IVS + 0.72% maternity/sickness/ANF + ISCRO — the
+            // ISCRO component varies: 0.51% through 2023, 0.35% from 2024)
             // for a professional with no other mandatory pension coverage,
-            // 24% for one who is a pensioner or already insured elsewhere
-            // (Customer::gs_other_pension).
-            ['slab_year' => 2025, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => false, 'income_from' => 0, 'income_to' => 200000, 'inps_rate' => 26.07, 'fixed_amount' => null, 'description' => 'Gestione Separata 2025 — no other pension coverage (circolare INPS 27/2025)'],
-            ['slab_year' => 2025, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => true, 'income_from' => 0, 'income_to' => 200000, 'inps_rate' => 24.00, 'fixed_amount' => null, 'description' => 'Gestione Separata 2025 — with other pension coverage (circolare INPS 27/2025)'],
+            // 24% (unchanged for years) for one who is a pensioner or
+            // already insured elsewhere (Customer::gs_other_pension).
+            // income_to is the real massimale di reddito annuo for iscritti
+            // dal 1996 in poi — the same ceiling Artigiani/Commercianti use
+            // (see InpsContributionRuleSeeder) — not an arbitrary cap.
+            ['slab_year' => 2023, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => false, 'income_from' => 0, 'income_to' => 113520, 'inps_rate' => 26.23, 'fixed_amount' => null, 'description' => 'Gestione Separata 2023 — no other pension coverage (circolare INPS 12/2023)'],
+            ['slab_year' => 2023, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => true, 'income_from' => 0, 'income_to' => 113520, 'inps_rate' => 24.00, 'fixed_amount' => null, 'description' => 'Gestione Separata 2023 — with other pension coverage (circolare INPS 12/2023)'],
+            ['slab_year' => 2024, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => false, 'income_from' => 0, 'income_to' => 119650, 'inps_rate' => 26.07, 'fixed_amount' => null, 'description' => 'Gestione Separata 2024 — no other pension coverage (circolare INPS 24/2024)'],
+            ['slab_year' => 2024, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => true, 'income_from' => 0, 'income_to' => 119650, 'inps_rate' => 24.00, 'fixed_amount' => null, 'description' => 'Gestione Separata 2024 — with other pension coverage (circolare INPS 24/2024)'],
+            ['slab_year' => 2025, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => false, 'income_from' => 0, 'income_to' => 120607, 'inps_rate' => 26.07, 'fixed_amount' => null, 'description' => 'Gestione Separata 2025 — no other pension coverage (circolare INPS 27/2025)'],
+            ['slab_year' => 2025, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => true, 'income_from' => 0, 'income_to' => 120607, 'inps_rate' => 24.00, 'fixed_amount' => null, 'description' => 'Gestione Separata 2025 — with other pension coverage (circolare INPS 27/2025)'],
+            ['slab_year' => 2026, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => false, 'income_from' => 0, 'income_to' => 122295, 'inps_rate' => 26.07, 'fixed_amount' => null, 'description' => 'Gestione Separata 2026 — no other pension coverage (circolare INPS 8/2026)'],
+            ['slab_year' => 2026, 'customer_type' => CustomerType::GestioneSeparata, 'gs_other_pension' => true, 'income_from' => 0, 'income_to' => 122295, 'inps_rate' => 24.00, 'fixed_amount' => null, 'description' => 'Gestione Separata 2026 — with other pension coverage (circolare INPS 8/2026)'],
         ];
 
         foreach ($rows as $row) {

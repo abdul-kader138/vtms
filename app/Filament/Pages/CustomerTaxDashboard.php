@@ -12,6 +12,8 @@ use App\Services\Tax\PaymentRegistry;
 use App\Services\Tax\RavvedimentoService;
 use App\Services\Tax\TaxCalculationOrchestrator;
 use App\Services\Tax\TaxOverviewService;
+use App\Services\Tax\TaxYearDeletionService;
+use App\Support\Tax\TaxRules;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -25,6 +27,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Get;
+use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Database\Eloquent\Model;
@@ -119,6 +122,8 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
     {
         return [
             $this->recalculateAction(),
+            $this->recalculateForwardAction(),
+            $this->deleteYearAction(),
             $this->importIncomeDataAction(),
             $this->f24SheetAction(),
             $this->annualTaxReportAction(),
@@ -229,13 +234,137 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             ->icon('heroicon-o-arrow-path')
             ->requiresConfirmation()
             ->action(function () {
+                $orchestrator = app(TaxCalculationOrchestrator::class);
+
+                if ($mismatch = $orchestrator->ruleMismatch($this->customerRecord, $this->selectedYear)) {
+                    $this->notifyRuleMismatch($mismatch);
+
+                    return;
+                }
+
                 try {
-                    app(TaxCalculationOrchestrator::class)->runForCustomerAndYear($this->customerRecord, $this->selectedYear);
+                    $orchestrator->runForCustomerAndYear($this->customerRecord, $this->selectedYear);
 
                     Notification::make()->success()->title(__('Recalculated'))->body(__('Tax figures for :year have been recalculated.', ['year' => $this->selectedYear]))->send();
                 } catch (Throwable $e) {
                     Notification::make()->danger()->title(__('Recalculation failed'))->body($e->getMessage())->send();
                 }
+            });
+    }
+
+    /**
+     * TaxRules is a single global switch, not per customer — see
+     * TaxCalculationOrchestrator::ruleMismatch(). Recalculating a year
+     * whose existing figures were computed under a different rule set
+     * would silently overwrite them with a different methodology, so both
+     * recalculate actions refuse and point at Tax Settings instead.
+     */
+    private function notifyRuleMismatch(string $storedRules): void
+    {
+        Notification::make()->danger()->persistent()
+            ->title(__('Rule set mismatch — not recalculated'))
+            ->body(__('This customer\'s figures were last computed under ":stored" rules, but the app is currently set to ":current" (Admin → Tax Settings). Recalculating now would silently switch methodology and overwrite real numbers. Switch the setting to ":stored" first if that\'s really what you want.', [
+                'stored' => TaxRules::options()[$storedRules] ?? $storedRules,
+                'current' => TaxRules::options()[TaxRules::mode()] ?? TaxRules::mode(),
+            ]))
+            ->send();
+    }
+
+    /**
+     * Walks this year and every following year that already has data,
+     * recalculating each in turn — see
+     * TaxCalculationOrchestrator::runForwardFromYear(). Use after editing
+     * or deleting an earlier year, since one year's advances/excess-income
+     * installments are scheduled into the next, so a change can ripple
+     * past year + 1.
+     */
+    public function recalculateForwardAction(): Action
+    {
+        return Action::make('recalculateForward')
+            ->label(__('Recalculate this year forward'))
+            ->icon('heroicon-o-forward')
+            ->color('gray')
+            ->requiresConfirmation()
+            ->modalDescription(__('Recalculates :year and every following year that already has a calculation, stopping at the first year with none. Paid payments are never rewritten — only the calculation itself and still-pending payments.', ['year' => $this->selectedYear]))
+            ->action(function () {
+                $orchestrator = app(TaxCalculationOrchestrator::class);
+
+                if ($mismatch = $orchestrator->ruleMismatch($this->customerRecord, $this->selectedYear)) {
+                    $this->notifyRuleMismatch($mismatch);
+
+                    return;
+                }
+
+                try {
+                    $results = $orchestrator->runForwardFromYear($this->customerRecord, $this->selectedYear);
+
+                    if ($results === []) {
+                        Notification::make()->warning()->title(__('Nothing to recalculate'))->body(__('No calculation exists for :year or later.', ['year' => $this->selectedYear]))->send();
+
+                        return;
+                    }
+
+                    $changedYears = collect($results)->where('changed', true)->pluck('year')->implode(', ');
+
+                    Notification::make()->success()->title(__('Recalculated forward'))
+                        ->body($changedYears === ''
+                            ? __('Walked :count year(s) from :year — nothing actually changed.', ['count' => count($results), 'year' => $this->selectedYear])
+                            : __('Walked :count year(s) from :year — figures changed for: :years.', ['count' => count($results), 'year' => $this->selectedYear, 'years' => $changedYears]))
+                        ->send();
+                } catch (Throwable $e) {
+                    Notification::make()->danger()->title(__('Recalculation failed'))->body($e->getMessage())->send();
+                }
+            });
+    }
+
+    /**
+     * Shows exactly what would be removed (and why it's blocked, if it is)
+     * before deleting — see TaxYearDeletionService's docblock for why a
+     * plain delete of a tax year is unsafe for Artigiani/Commercianti:
+     * payments it scheduled into the NEXT year cascade with it.
+     */
+    public function deleteYearAction(): Action
+    {
+        return Action::make('deleteYear')
+            ->label(__('Delete this year'))
+            ->icon('heroicon-o-trash')
+            ->color('danger')
+            ->visible(fn () => app(TaxYearDeletionService::class)->preview($this->customerRecord, $this->selectedYear)['has_data'])
+            ->modalHeading(fn () => __('Delete :year?', ['year' => $this->selectedYear]))
+            ->modalDescription(__('This removes the calculation and every payment it scheduled — including, for Artigiani/Commercianti, advances and excess-income installments it scheduled into next year.'))
+            ->modalSubmitActionLabel(__('Delete this year'))
+            ->form([
+                Placeholder::make('preview')
+                    ->hiddenLabel()
+                    ->content(fn () => new HtmlString(view('filament.pages.partials.delete-year-preview', [
+                        'preview' => app(TaxYearDeletionService::class)->preview($this->customerRecord, $this->selectedYear),
+                        'year' => $this->selectedYear,
+                    ])->render())),
+            ])
+            ->action(function () {
+                $service = app(TaxYearDeletionService::class);
+                $year = $this->selectedYear;
+
+                try {
+                    $service->delete($this->customerRecord, $year);
+                } catch (Throwable $e) {
+                    Notification::make()->danger()->title(__('Could not delete :year', ['year' => $year]))->body($e->getMessage())->persistent()->send();
+
+                    return;
+                }
+
+                $notification = Notification::make()->success()->title(__('Deleted'))->body(__(':year has been deleted.', ['year' => $year]));
+
+                if ($service->staleFollowingYear($this->customerRecord, $year)) {
+                    $notification->persistent()->body(__(':year has been deleted. :next still has figures computed using data from :year — recalculate it.', ['year' => $year, 'next' => $year + 1]))
+                        ->actions([
+                            NotificationAction::make('recalculateNext')
+                                ->label(__('Recalculate :year', ['year' => $year + 1]))
+                                ->url(static::getUrl(['customer' => $this->customerRecord->id, 'year' => $year + 1])),
+                        ]);
+                }
+
+                $notification->send();
             });
     }
 
