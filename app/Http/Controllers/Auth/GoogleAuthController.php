@@ -31,9 +31,9 @@ class GoogleAuthController extends Controller
         try {
             $googleUser = Socialite::driver('google')->user();
         } catch (InvalidStateException) {
-            return $this->failed('That Google sign-in link expired. Please try again.');
+            return $this->failed(__('That Google sign-in link expired. Please try again.'));
         } catch (\Throwable) {
-            return $this->failed('Google sign-in failed. Please try again.');
+            return $this->failed(__('Google sign-in failed. Please try again.'));
         }
 
         $user = User::where('google_id', $googleUser->getId())->first()
@@ -44,7 +44,7 @@ class GoogleAuthController extends Controller
         // provision a new account on the fly. Staff accounts are created
         // deliberately via UserResource/ShieldSeeder.
         if (! $user || ! $user->isStaff()) {
-            return $this->failed('No staff account found for that Google account.');
+            return $this->failed(__('No staff account found for that Google account.'));
         }
 
         if (! $user->google_id) {

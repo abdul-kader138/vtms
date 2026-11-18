@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Redditi PF — Quadro LM/RR {{ $year }}</title>
+    <title>{{ __('Redditi PF — Quadro LM/RR :year', ['year' => $year]) }}</title>
     <style>
         @page { margin: 25mm 20mm; }
 
@@ -50,56 +50,53 @@
     <div class="header-section">
         <div class="business-name">{{ \Illuminate\Support\Str::upper($customer->company ?: $customer->name) }}</div>
         @if ($customer->vat_no)
-            <div class="info-line">P.IVA: {{ $customer->vat_no }}</div>
+            <div class="info-line">{{ __('P.IVA') }}: {{ $customer->vat_no }}</div>
         @endif
         @if ($customer->codice_fiscale)
-            <div class="info-line">Codice fiscale: {{ $customer->codice_fiscale }}</div>
+            <div class="info-line">{{ __('Codice fiscale') }}: {{ $customer->codice_fiscale }}</div>
         @endif
     </div>
 
-    <div class="quadro-title" style="text-align:center">Redditi Persone Fisiche {{ $year + 1 }} — anno d'imposta {{ $year }}</div>
-    <div class="quadro-subtitle" style="text-align:center">Bozza di lavoro — Quadro LM e Quadro RR</div>
+    <div class="quadro-title" style="text-align:center">{{ __("Redditi Persone Fisiche :nextYear — anno d'imposta :year", ['nextYear' => $year + 1, 'year' => $year]) }}</div>
+    <div class="quadro-subtitle" style="text-align:center">{{ __('Bozza di lavoro — Quadro LM e Quadro RR') }}</div>
 
     <div class="disclaimer">
-        Questo documento è una <strong>bozza di calcolo</strong>, non la dichiarazione. La dichiarazione dei redditi va
-        presentata esclusivamente tramite RedditiOnline o un intermediario abilitato. I numeri di rigo qui riportati
-        vanno verificati sul modello Redditi PF in vigore per l'anno di presentazione, che può differire da questo.
+        {!! __('Questo documento è una :bold, non la dichiarazione. La dichiarazione dei redditi va presentata esclusivamente tramite RedditiOnline o un intermediario abilitato. I numeri di rigo qui riportati vanno verificati sul modello Redditi PF in vigore per l\'anno di presentazione, che può differire da questo.', ['bold' => '<strong>'.__('bozza di calcolo').'</strong>']) !!}
     </div>
 
-    <div class="quadro-title">Quadro LM — Reddito di impresa/lavoro autonomo (regime forfettario)</div>
+    <div class="quadro-title">{{ __('Quadro LM — Reddito di impresa/lavoro autonomo (regime forfettario)') }}</div>
     <table class="lines">
-        <tr><td class="ref">LM22</td><td class="label">Ricavi/compensi percepiti nell'anno{{ $lm['ateco_code'] ? ' (ATECO '.$lm['ateco_code'].')' : '' }}</td><td class="value">€ {{ number_format($lm['total_sales'], 2, ',', '.') }}</td></tr>
-        <tr><td class="ref">LM34</td><td class="label">Coefficiente di redditività applicato</td><td class="value">{{ number_format($lm['coefficient'], 0) }}%</td></tr>
-        <tr><td class="ref">LM35</td><td class="label">Reddito lordo (ricavi × coefficiente)</td><td class="value">€ {{ number_format($lm['gross_income'], 2, ',', '.') }}</td></tr>
+        <tr><td class="ref">LM22</td><td class="label">{{ __("Ricavi/compensi percepiti nell'anno") }}{{ $lm['ateco_code'] ? ' ('.__('ATECO').' '.$lm['ateco_code'].')' : '' }}</td><td class="value">€ {{ number_format($lm['total_sales'], 2, ',', '.') }}</td></tr>
+        <tr><td class="ref">LM34</td><td class="label">{{ __('Coefficiente di redditività applicato') }}</td><td class="value">{{ number_format($lm['coefficient'], 0) }}%</td></tr>
+        <tr><td class="ref">LM35</td><td class="label">{{ __('Reddito lordo (ricavi × coefficiente)') }}</td><td class="value">€ {{ number_format($lm['gross_income'], 2, ',', '.') }}</td></tr>
         @if ($lm['inps_deducted'] > 0)
-            <tr><td class="ref">LM36</td><td class="label">Contributi previdenziali versati nell'anno (deducibili)</td><td class="value">− € {{ number_format($lm['inps_deducted'], 2, ',', '.') }}</td></tr>
+            <tr><td class="ref">LM36</td><td class="label">{{ __('Contributi previdenziali versati nell\'anno (deducibili)') }}</td><td class="value">− € {{ number_format($lm['inps_deducted'], 2, ',', '.') }}</td></tr>
         @endif
-        <tr class="total"><td class="ref">LM37</td><td class="label">Reddito imponibile</td><td class="value">€ {{ number_format($lm['taxable_income'], 2, ',', '.') }}</td></tr>
-        <tr><td class="ref">LM38/39</td><td class="label">Aliquota imposta sostitutiva applicata</td><td class="value">{{ rtrim(rtrim(number_format($lm['tax_rate'], 2), '0'), '.') }}%</td></tr>
-        <tr class="total"><td class="ref">LM41</td><td class="label">Imposta sostitutiva dovuta</td><td class="value">€ {{ number_format($lm['tax_due'], 2, ',', '.') }}</td></tr>
+        <tr class="total"><td class="ref">LM37</td><td class="label">{{ __('Reddito imponibile') }}</td><td class="value">€ {{ number_format($lm['taxable_income'], 2, ',', '.') }}</td></tr>
+        <tr><td class="ref">LM38/39</td><td class="label">{{ __('Aliquota imposta sostitutiva applicata') }}</td><td class="value">{{ rtrim(rtrim(number_format($lm['tax_rate'], 2), '0'), '.') }}%</td></tr>
+        <tr class="total"><td class="ref">LM41</td><td class="label">{{ __('Imposta sostitutiva dovuta') }}</td><td class="value">€ {{ number_format($lm['tax_due'], 2, ',', '.') }}</td></tr>
     </table>
 
     @if ($rr)
-        <div class="quadro-title">Quadro RR — Contributi IVS dovuti ({{ $customer->customer_type?->label() }})</div>
+        <div class="quadro-title">{{ __('Quadro RR — Contributi IVS dovuti (:type)', ['type' => $customer->customer_type?->label()]) }}</div>
         <table class="lines">
-            <tr><td class="ref">RR{{ $rr['section'] }}</td><td class="label">Sezione</td><td class="value">{{ $rr['section'] === 'II' ? 'II — Gestione Separata' : 'I — Artigiani/Commercianti' }}</td></tr>
-            <tr><td class="ref">RR3</td><td class="label">Reddito imponibile ai fini contributivi</td><td class="value">€ {{ number_format($rr['taxable_income'], 2, ',', '.') }}</td></tr>
+            <tr><td class="ref">RR{{ $rr['section'] }}</td><td class="label">{{ __('Sezione') }}</td><td class="value">{{ $rr['section'] === 'II' ? __('II — Gestione Separata') : __('I — Artigiani/Commercianti') }}</td></tr>
+            <tr><td class="ref">RR3</td><td class="label">{{ __('Reddito imponibile ai fini contributivi') }}</td><td class="value">€ {{ number_format($rr['taxable_income'], 2, ',', '.') }}</td></tr>
             @if ($rr['fixed_amount'] !== null)
-                <tr><td class="ref">RR13</td><td class="label">Contributi fissi sul minimale</td><td class="value">€ {{ number_format($rr['fixed_amount'], 2, ',', '.') }}</td></tr>
-                <tr><td class="ref">RR14</td><td class="label">Contributi sulla quota eccedente il minimale (aliquota {{ $rr['rate'] }}%)</td><td class="value">€ {{ number_format($rr['variable_amount'], 2, ',', '.') }}</td></tr>
+                <tr><td class="ref">RR13</td><td class="label">{{ __('Contributi fissi sul minimale') }}</td><td class="value">€ {{ number_format($rr['fixed_amount'], 2, ',', '.') }}</td></tr>
+                <tr><td class="ref">RR14</td><td class="label">{{ __('Contributi sulla quota eccedente il minimale (aliquota :rate%)', ['rate' => $rr['rate']]) }}</td><td class="value">€ {{ number_format($rr['variable_amount'], 2, ',', '.') }}</td></tr>
             @else
-                <tr><td class="ref">RR5</td><td class="label">Aliquota applicata</td><td class="value">{{ $rr['rate'] }}%</td></tr>
+                <tr><td class="ref">RR5</td><td class="label">{{ __('Aliquota applicata') }}</td><td class="value">{{ $rr['rate'] }}%</td></tr>
             @endif
             @if ($rr['discount_amount'] > 0)
-                <tr><td class="ref">—</td><td class="label">Riduzione contributiva ({{ $rr['discount_percentage'] }}%)</td><td class="value">− € {{ number_format($rr['discount_amount'], 2, ',', '.') }}</td></tr>
+                <tr><td class="ref">—</td><td class="label">{{ __('Riduzione contributiva (:percent%)', ['percent' => $rr['discount_percentage']]) }}</td><td class="value">− € {{ number_format($rr['discount_amount'], 2, ',', '.') }}</td></tr>
             @endif
-            <tr class="total"><td class="ref">RR16</td><td class="label">Contributi dovuti per l'anno</td><td class="value">€ {{ number_format($rr['amount_due'], 2, ',', '.') }}</td></tr>
+            <tr class="total"><td class="ref">RR16</td><td class="label">{{ __("Contributi dovuti per l'anno") }}</td><td class="value">€ {{ number_format($rr['amount_due'], 2, ',', '.') }}</td></tr>
         </table>
     @endif
 
     <div class="footer-section">
-        Documento generato automaticamente il {{ now()->format('d/m/Y') }} — da verificare con il proprio commercialista
-        prima di presentare la dichiarazione.
+        {{ __('Documento generato automaticamente il :date — da verificare con il proprio commercialista prima di presentare la dichiarazione.', ['date' => now()->format('d/m/Y')]) }}
     </div>
 
 </body>

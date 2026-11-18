@@ -131,11 +131,11 @@ class HistoricalYearEntry extends Page implements HasForms
         $paymentFields = fn (bool $optional = false) => [
             TextInput::make('amount')->label(__('Amount'))->numeric()->prefix('€')
                 ->required(fn (Get $get): bool => ! $optional || filled($get('due_date')) || filled($get('paid_amount')) || filled($get('paid_date'))),
-            DatePicker::make('due_date')->label(__('Due date'))
+            DatePicker::make('due_date')->label(__('Due date'))->native(false)->displayFormat('d/m/Y')
                 ->required(fn (Get $get): bool => ! $optional || filled($get('amount'))),
             Select::make('status')->label(__('Status'))->options($statusOptions)->default('pending')->native(false),
             TextInput::make('paid_amount')->label(__('Paid amount'))->numeric()->prefix('€'),
-            DatePicker::make('paid_date')->label(__('Paid date')),
+            DatePicker::make('paid_date')->label(__('Paid date'))->native(false)->displayFormat('d/m/Y'),
         ];
 
         return $form->schema([

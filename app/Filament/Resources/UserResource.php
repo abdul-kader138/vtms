@@ -233,7 +233,7 @@ class UserResource extends Resource
 
                 TextColumn::make('email_verified_at')
                     ->label(__('Verified'))
-                    ->dateTime()
+                    ->dateTime('d/m/Y H:i')
                     ->placeholder(__('Not verified'))
                     ->toggleable(),
 
@@ -272,7 +272,7 @@ class UserResource extends Resource
 
                 TextColumn::make('created_at')
                     ->label(__('Joined'))
-                    ->dateTime('d M Y')
+                    ->dateTime('d/m/Y')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])

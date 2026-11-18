@@ -61,7 +61,7 @@ class ActivityLogResource extends Resource
             ->columns([
                 TextColumn::make('created_at')
                     ->label(__('When'))
-                    ->dateTime('d M Y H:i:s')
+                    ->dateTime('d/m/Y H:i:s')
                     ->sortable()
                     ->toggleable(),
 

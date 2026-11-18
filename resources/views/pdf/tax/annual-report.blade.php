@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Conto Economico {{ $year }}</title>
+    <title>{{ __('Conto Economico :year', ['year' => $year]) }}</title>
     <style>
         @page {
             margin: 40mm 28mm 15mm 28mm;
@@ -188,7 +188,7 @@
 
     @if (!empty($vat_number))
         <div class="top-right-info">
-            <div>P.IVA: {{ $vat_number }}</div>
+            <div>{{ __('P.IVA') }}: {{ $vat_number }}</div>
         </div>
     @endif
 
@@ -205,32 +205,32 @@
     </div>
 
     <div class="tax-info">
-        <div>Contribuente in {{ $tax_regime === 'regime_forfettario' ? 'regime forfettario' : $tax_regime }}</div>
+        <div>{{ __('Contribuente in :regime', ['regime' => $tax_regime === 'regime_forfettario' ? __('regime forfettario') : $tax_regime]) }}</div>
         @if (!empty($activity_description))
-            <div>attività di {{ $activity_description }}</div>
+            <div>{{ __('attività di :activity', ['activity' => $activity_description]) }}</div>
         @endif
     </div>
 
     <div class="period-section">
-        Situazione economica dal {{ $period_start }} al {{ $period_end }}
+        {{ __('Situazione economica dal :start al :end', ['start' => $period_start, 'end' => $period_end]) }}
     </div>
 
     <div class="report-title-section">
-        <div class="report-title-left"><strong>Conto Economico</strong></div>
+        <div class="report-title-left"><strong>{{ __('Conto Economico') }}</strong></div>
         <div class="report-title-right"><strong>{{ $period_end }}</strong></div>
     </div>
 
     <table class="income-statement">
         <thead>
-            <tr><th colspan="2">A) <strong>Valore della produzione</strong></th></tr>
+            <tr><th colspan="2">A) <strong>{{ __('Valore della produzione') }}</strong></th></tr>
         </thead>
         <tbody>
             <tr>
-                <td class="label">Ricavi delle prestazioni</td>
+                <td class="label">{{ __('Ricavi delle prestazioni') }}</td>
                 <td class="value currency">€ {{ number_format($total_sales, 2, ',', '.') }}</td>
             </tr>
             <tr class="total-row">
-                <td class="label">Totale valore della produzione</td>
+                <td class="label">{{ __('Totale valore della produzione') }}</td>
                 <td class="value currency">€ {{ number_format($total_sales, 2, ',', '.') }}</td>
             </tr>
         </tbody>
@@ -238,21 +238,21 @@
 
     <table class="income-statement">
         <thead>
-            <tr><th colspan="2">B) <strong>Costi della produzione</strong></th></tr>
+            <tr><th colspan="2">B) <strong>{{ __('Costi della produzione') }}</strong></th></tr>
         </thead>
         <tbody>
             <tr>
                 <td class="label">
                     @if (!empty($ateco_code))
-                        In base al codice ateco {{ $ateco_code }} redditività {{ number_format($coefficient, 0) }}%
+                        {{ __('In base al codice ateco :code redditività :coefficient%', ['code' => $ateco_code, 'coefficient' => number_format($coefficient, 0)]) }}
                     @else
-                        In base alla redditività {{ number_format($coefficient, 0) }}%
+                        {{ __('In base alla redditività :coefficient%', ['coefficient' => number_format($coefficient, 0)]) }}
                     @endif
                 </td>
                 <td class="value currency">€ {{ number_format($costs, 2, ',', '.') }}</td>
             </tr>
             <tr class="total-row">
-                <td class="label">Totale costi della produzione</td>
+                <td class="label">{{ __('Totale costi della produzione') }}</td>
                 <td class="value currency">€ {{ number_format($costs, 2, ',', '.') }}</td>
             </tr>
         </tbody>
@@ -262,11 +262,11 @@
         <table class="income-statement">
             <tbody>
                 <tr>
-                    <td class="label">Reddito lordo</td>
+                    <td class="label">{{ __('Reddito lordo') }}</td>
                     <td class="value currency">€ {{ number_format($gross_income, 2, ',', '.') }}</td>
                 </tr>
                 <tr>
-                    <td class="label">Contributi previdenziali versati nell'anno (dedotti)</td>
+                    <td class="label">{{ __('Contributi previdenziali versati nell\'anno (dedotti)') }}</td>
                     <td class="value currency">− € {{ number_format($inps_deducted, 2, ',', '.') }}</td>
                 </tr>
             </tbody>
@@ -276,14 +276,14 @@
     <table class="income-statement">
         <tbody>
             <tr class="net-income-row">
-                <td class="label"><strong>Reddito netto</strong></td>
+                <td class="label"><strong>{{ __('Reddito netto') }}</strong></td>
                 <td class="value currency"><strong>€ {{ number_format($net_income, 2, ',', '.') }}</strong></td>
             </tr>
         </tbody>
     </table>
 
     <div class="footer-section">
-        <div class="sig-title">Titolare</div>
+        <div class="sig-title">{{ __('Titolare') }}</div>
         <div class="owner-name">{{ \Illuminate\Support\Str::upper($customer->name) }}</div>
     </div>
 

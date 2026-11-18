@@ -34,7 +34,7 @@ class ViewActivityLog extends ViewRecord
                 ->schema([
                     TextEntry::make('created_at')
                         ->label(__('When'))
-                        ->dateTime('d M Y H:i:s'),
+                        ->dateTime('d/m/Y H:i:s'),
 
                     TextEntry::make('log_name')
                         ->label(__('Area'))

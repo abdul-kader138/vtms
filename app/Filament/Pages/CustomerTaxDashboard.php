@@ -18,6 +18,7 @@ use App\Services\Tax\TaxYearDeletionService;
 use App\Support\Tax\TaxRules;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\DatePicker;
@@ -135,16 +136,32 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
 
     // ── Header actions ──────────────────────────────────────────────────────
 
+    // Seven actions in a flat row is action soup: only the two actions used
+    // on nearly every visit (recalculate, import) stay as standalone
+    // buttons. Documents and the rarer/destructive actions are grouped into
+    // dropdowns, keeping the header scannable at a glance.
     protected function getHeaderActions(): array
     {
         return [
             $this->recalculateAction(),
-            $this->recalculateForwardAction(),
-            $this->deleteYearAction(),
             $this->importIncomeDataAction(),
-            $this->f24SheetAction(),
-            $this->annualTaxReportAction(),
-            $this->redditiReportAction(),
+            ActionGroup::make([
+                $this->f24SheetAction(),
+                $this->annualTaxReportAction(),
+                $this->redditiReportAction(),
+            ])
+                ->label(__('Documents'))
+                ->icon('heroicon-o-document-text')
+                ->color('gray')
+                ->button(),
+            ActionGroup::make([
+                $this->recalculateForwardAction(),
+                $this->deleteYearAction(),
+            ])
+                ->icon('heroicon-m-ellipsis-vertical')
+                ->color('gray')
+                ->iconButton()
+                ->tooltip(__('More actions')),
         ];
     }
 
@@ -177,7 +194,7 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                         ->sortKeys()
                         ->mapWithKeys(fn ($rows, $date) => [$date => Carbon::parse($date)->format('d/m/Y').' — € '.number_format($rows->sum('outstanding'), 2, ',', '.').($rows->first()['status'] === 'overdue' ? ' · '.__('overdue') : '')])
                         ->all()),
-                DatePicker::make('pay_on')->label(__('Payment date'))->default(now()->toDateString())->required(),
+                DatePicker::make('pay_on')->label(__('Payment date'))->native(false)->displayFormat('d/m/Y')->default(now()->toDateString())->required(),
             ])
             ->action(fn (array $data) => redirect()->to(self::f24SheetUrl($this->customerRecord->id, Carbon::parse($data['due_date']), Carbon::parse($data['pay_on']))));
     }
@@ -194,7 +211,7 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             ->form([
                 Hidden::make('type'),
                 Hidden::make('id'),
-                DatePicker::make('pay_on')->label(__('Payment date'))->required()->live(),
+                DatePicker::make('pay_on')->label(__('Payment date'))->native(false)->displayFormat('d/m/Y')->required()->live(),
                 Placeholder::make('breakdown')->hiddenLabel()->content(function (Get $get) {
                     $payment = $this->findPayment(['type' => $get('type'), 'id' => $get('id')]);
                     if (! $payment || ! $get('pay_on')) {
@@ -478,7 +495,7 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                     ->native(false)
                     ->required(),
                 TextInput::make('paid_amount')->label(__('Paid amount'))->numeric()->prefix('€')->required(),
-                DatePicker::make('paid_date')->label(__('Paid date')),
+                DatePicker::make('paid_date')->label(__('Paid date'))->native(false)->displayFormat('d/m/Y'),
             ])
             ->action(function (array $arguments, array $data) {
                 $payment = $this->findPayment($arguments);
@@ -512,14 +529,14 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             })
             ->form([
                 TextInput::make('amount')->label(__('Amount'))->numeric()->minValue(0)->prefix('€')->required(),
-                DatePicker::make('due_date')->label(__('Due date'))->required(),
+                DatePicker::make('due_date')->label(__('Due date'))->native(false)->displayFormat('d/m/Y')->required(),
                 Select::make('status')
                     ->label(__('Status'))
                     ->options(collect(PaymentStatus::cases())->mapWithKeys(fn (PaymentStatus $s) => [$s->value => ucfirst($s->value)]))
                     ->native(false)
                     ->required(),
                 TextInput::make('paid_amount')->label(__('Paid amount'))->numeric()->minValue(0)->prefix('€')->default(0),
-                DatePicker::make('paid_date')->label(__('Paid date')),
+                DatePicker::make('paid_date')->label(__('Paid date'))->native(false)->displayFormat('d/m/Y'),
             ])
             ->action(function (array $arguments, array $data) {
                 $payment = $this->findPayment($arguments);

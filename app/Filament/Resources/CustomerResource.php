@@ -183,6 +183,7 @@ class CustomerResource extends Resource
                     DatePicker::make('inps_discount_request_date')
                         ->label(__('Request filed on'))
                         ->native(false)
+                        ->displayFormat('d/m/Y')
                         ->visible(fn (Get $get): bool => (bool) $get('inps_discount_eligible') && in_array($get('customer_type'), [CustomerType::Commercianti->value, CustomerType::Artigiani->value], true))
                         ->helperText(__('Date the domanda di riduzione contributiva was filed with INPS, if known.')),
                     TextInput::make('inps_discount_source')

@@ -170,7 +170,7 @@ class PaymentCalendar extends Page implements HasActions, HasForms
 
         return response()->streamDownload(function () use ($entries) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['Due date', 'Customer', 'VAT number', 'Payment', 'F24 code', 'Amount', 'Paid', 'Outstanding', 'Status']);
+            fputcsv($out, [__('Due date'), __('Customer'), __('VAT number'), __('Payment'), __('F24 code'), __('Amount'), __('Paid'), __('Outstanding'), __('Status')]);
             foreach ($entries as $e) {
                 fputcsv($out, [
                     $e['due_date']->toDateString(),
