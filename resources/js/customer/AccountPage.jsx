@@ -18,7 +18,7 @@ function AccountBand({ appName, logo }) {
         <a className="c-mark" href="/app/tax">{logo ? <img src={logo} alt="" /> : <span className="c-mark-square" aria-hidden="true">{appName.slice(0, 1).toUpperCase()}</span>}<span>{appName}</span></a>
         <nav className="c-account-nav"><a href="/app/tax">{t('My taxes')}</a><strong>{t('Account')}</strong></nav>
         <div className="c-band-actions"><div className="c-lang" role="group" aria-label={t('Language')}>
-            {['it', 'en'].map((code) => <button key={code} type="button" aria-pressed={locale.startsWith(code)} onClick={() => switchLanguage(code)}>{code.toUpperCase()}</button>)}
+            {[['it', 'IT'], ['en', 'EN'], ['bn', 'বাং']].map(([code, label]) => <button key={code} type="button" aria-pressed={locale.startsWith(code)} onClick={() => switchLanguage(code)}>{label}</button>)}
         </div><button type="button" className="c-chip" onClick={logout}><Icon name="logout" /><span>{t('Sign out')}</span></button></div>
     </div></header>;
 }

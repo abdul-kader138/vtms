@@ -3,8 +3,9 @@ import { getJson, postJson, postMultipart } from './api';
 import { locale, t } from './i18n';
 import { Icon, Notice } from './ui';
 import AccountPage from './AccountPage';
+import Prediction from './Prediction';
 
-const LANGUAGES = [['it', 'IT'], ['en', 'EN']];
+const LANGUAGES = [['it', 'IT'], ['en', 'EN'], ['bn', 'বাং']];
 const SOON_DAYS = 14;
 
 let money;
@@ -673,6 +674,9 @@ export default function TaxDashboard({ appName, logo, view = 'tax' }) {
                         </section>
                     </div>
                 </div>
+
+                {/* Fully separate from the real figures above — see Prediction.jsx. */}
+                <Prediction year={data.year} />
             </main>
         </>
     );

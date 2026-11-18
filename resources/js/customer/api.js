@@ -100,6 +100,31 @@ export async function putJson(path, body) {
     return data;
 }
 
+export async function deleteJson(path) {
+    await ensureCsrfCookie();
+
+    const response = await fetch(path, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json',
+            'Accept-Language': locale,
+            'X-XSRF-TOKEN': readCookie('XSRF-TOKEN'),
+        },
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        const error = new Error(data.message || t('Request failed.'));
+        error.status = response.status;
+        error.errors = data.errors || {};
+        throw error;
+    }
+
+    return data;
+}
+
 export async function getJson(path) {
     const response = await fetch(path, {
         credentials: 'include',

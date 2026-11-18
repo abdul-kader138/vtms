@@ -244,6 +244,8 @@
     "Professional, scientific, technical, health, education, finance and insurance": "Attività professionali, scientifiche, tecniche, sanitarie, di istruzione, finanziarie e assicurative",
     "projected": "previsto",
     "Projected INPS": "INPS previsto",
+    "Projected flat tax": "Imposta sostitutiva prevista",
+    "Projected revenue for the year": "Ricavi previsti per l'anno",
     "Projected tax due": "Imposta dovuta prevista",
     "Projected taxable income": "Reddito imponibile previsto",
     "Projected total sales": "Ricavi totali previsti",
@@ -773,5 +775,13 @@
     ":app — tax deadlines": ":app — scadenze fiscali",
     "Due :date: :amount": "Scadenza :date: :amount",
     ":customer reported a payment": ":customer ha segnalato un pagamento",
-    "Check and confirm": "Controlla e conferma"
+    "Check and confirm": "Controlla e conferma",
+    "Monthly register & prediction": "Registro mensile e previsione",
+    "Close months as you go; the projection below gets more accurate as the year fills in": "Chiudi i mesi man mano che passano; la previsione sotto diventa più precisa quando l'anno si riempie di dati",
+    "Representative estimate only — not an official figure. It never changes your real tax calculation above.": "Solo una stima indicativa — non è un dato ufficiale. Non modifica mai il calcolo fiscale reale qui sopra.",
+    "No income recorded yet this year — nothing to project.": "Nessun incasso registrato quest'anno — niente da prevedere.",
+    "Actual": "Effettivo",
+    "Projected": "Previsto",
+    "Close month": "Chiudi il mese",
+    "Reopen": "Riapri"
 }

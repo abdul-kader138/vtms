@@ -306,6 +306,15 @@ body.c-body {
 .c-hidden-costs li small { display: block; color: var(--ink-3); font-weight: 400; font-size: 13px; margin-top: 2px; }
 .c-hidden-costs li strong { flex: none; font-variant-numeric: lining-nums; white-space: nowrap; }
 
+.c-prediction { margin-top: 36px; }
+.c-prediction .c-figures { margin: 20px 0; }
+.c-months { list-style: none; margin: 20px 0 0; padding: 0; border-top: 1px solid var(--rule); }
+.c-month-row { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--rule); }
+.c-month-name { flex: 1 1 auto; font-weight: 600; text-transform: capitalize; }
+.c-month-amount { font-variant-numeric: lining-nums; white-space: nowrap; }
+.c-tag--actual { background: var(--line-tint); color: var(--line-strong); }
+.c-tag--projected { background: var(--ground-2); color: var(--ink-3); }
+
 .c-explain { border-top: 1px solid var(--rule); }
 .c-explain details { border-bottom: 1px solid var(--rule); }
 .c-explain summary { list-style: none; display: flex; align-items: center; gap: 12px; padding: 14px 4px; cursor: pointer; font-weight: 650; }
