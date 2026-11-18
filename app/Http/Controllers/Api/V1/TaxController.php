@@ -11,6 +11,8 @@ use App\Models\TaxCalculation;
 use App\Models\User;
 use App\Services\Tax\AnnualTaxReportService;
 use App\Services\Tax\F24SheetService;
+use App\Services\Tax\IncomeClosingService;
+use App\Services\Tax\IncomePredictionService;
 use App\Services\Tax\PaymentCalendarService;
 use App\Services\Tax\PaymentRegistry;
 use App\Services\Tax\RavvedimentoService;
@@ -123,6 +125,73 @@ class TaxController extends Controller
             'annual_report_url' => $tax ? route('api.v1.tax.annual-report', ['year' => $year]) : null,
             'redditi_report_url' => $tax ? route('api.v1.tax.redditi-report', ['year' => $year]) : null,
         ]);
+    }
+
+    #[OA\Get(
+        path: '/api/v1/tax/{year}/prediction',
+        summary: 'Representative year-over-year income/tax/INPS projection',
+        description: 'Entirely separate from the real calculation in GET /api/v1/tax/{year} — an illustrative estimate, not an official figure. Never affects real tax data.',
+        security: [['sanctumSession' => []]],
+        tags: ['Tax'],
+        parameters: [new OA\Parameter(name: 'year', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 200, description: 'OK'),
+            new OA\Response(response: 404, description: 'No customer linked to this account'),
+        ],
+    )]
+    public function prediction(Request $request, int $year, IncomePredictionService $predictionService, IncomeClosingService $closingService): JsonResponse
+    {
+        $customer = $this->customerFor($request);
+
+        return response()->json([
+            'year' => $year,
+            'representative' => true,
+            'closed_months' => $closingService->closedMonths($customer, $year),
+            'prediction' => $predictionService->predictRepresentative($customer, $year),
+        ]);
+    }
+
+    #[OA\Post(
+        path: '/api/v1/tax/{year}/{month}/close',
+        summary: "Mark a month's register as final (customer self-service)",
+        description: 'Purely an input signal for the Prediction feature\'s year-over-year math — does not lock or change any income data, and never affects a real tax calculation.',
+        security: [['sanctumSession' => [], 'csrfToken' => []]],
+        tags: ['Tax'],
+        parameters: [
+            new OA\Parameter(name: 'year', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'month', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [new OA\Response(response: 200, description: 'Closed')],
+    )]
+    public function closeMonth(Request $request, int $year, int $month, IncomeClosingService $closingService): JsonResponse
+    {
+        $customer = $this->customerFor($request);
+        abort_unless($month >= 1 && $month <= 12, 422);
+
+        $closingService->close($customer, $year, $month);
+
+        return response()->json(['closed_months' => $closingService->closedMonths($customer, $year)]);
+    }
+
+    #[OA\Delete(
+        path: '/api/v1/tax/{year}/{month}/close',
+        summary: 'Reopen a previously closed month (customer self-service)',
+        security: [['sanctumSession' => [], 'csrfToken' => []]],
+        tags: ['Tax'],
+        parameters: [
+            new OA\Parameter(name: 'year', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'month', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [new OA\Response(response: 200, description: 'Reopened')],
+    )]
+    public function reopenMonth(Request $request, int $year, int $month, IncomeClosingService $closingService): JsonResponse
+    {
+        $customer = $this->customerFor($request);
+        abort_unless($month >= 1 && $month <= 12, 422);
+
+        $closingService->reopen($customer, $year, $month);
+
+        return response()->json(['closed_months' => $closingService->closedMonths($customer, $year)]);
     }
 
     #[OA\Get(

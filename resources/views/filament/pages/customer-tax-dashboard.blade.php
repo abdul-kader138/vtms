@@ -262,5 +262,61 @@
         @endif
     </x-filament::section>
 
+    {{-- Prediction — entirely separate section. Representative estimate
+         only, not an official figure, and never affects the real
+         calculations above. See CustomerTaxDashboard::getPrediction(). --}}
+    @php($rep = $this->getPrediction())
+    <x-filament::section icon="heroicon-o-chart-bar-square" collapsible :collapsed="true">
+        <x-slot name="heading">{{ __('Prediction') }}</x-slot>
+        <x-slot name="description">{{ __('Representative estimate only — not an official figure, and separate from the calculations above.') }}</x-slot>
+
+        <div class="vt-alert vt-alert--warning" style="margin-bottom:1rem">
+            <span>{{ __('This is a year-over-year projection for reference only. It never changes any real tax, INPS or payment figure.') }}</span>
+        </div>
+
+        @if ($rep['prediction'])
+            @php($p = $rep['prediction'])
+            <div class="vt-stats vt-mb">
+                @include('filament.pages.partials.stat', ['label' => __('Projected total sales'), 'value' => $p['predicted_total_sales']])
+                @include('filament.pages.partials.stat', ['label' => __('Projected taxable income'), 'value' => $p['predicted_taxable_income']])
+                @include('filament.pages.partials.stat', ['label' => __('Projected tax due'), 'value' => $p['predicted_tax_due']])
+                @if ($p['predicted_inps'])
+                    @include('filament.pages.partials.stat', ['label' => __('Projected INPS'), 'value' => $p['predicted_inps']['amount_after_discount']])
+                @endif
+            </div>
+
+            <div class="vt-table-wrap">
+                <table class="vt-table">
+                    <thead>
+                        <tr>
+                            <th>{{ __('Month') }}</th>
+                            <th class="vt-num">{{ __('Sales') }}</th>
+                            <th>{{ __('Source') }}</th>
+                            <th>{{ __('Closed by customer') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($p['monthly_projected'] as $row)
+                            <tr>
+                                <td>{{ $monthNames[$row['month']] }}</td>
+                                <td class="vt-num">€ {{ number_format($row['sales'], 2, ',', '.') }}</td>
+                                <td>
+                                    @if ($row['is_actual'])
+                                        <span class="vt-code">{{ __('actual') }}</span>
+                                    @else
+                                        <span class="vt-muted vt-small">{{ __('projected') }} · {{ $row['method'] === 'year_over_year' ? __('vs. last year') : __('average') }}</span>
+                                    @endif
+                                </td>
+                                <td>{{ $rep['closed_months'][$row['month']] ? '✓' : '—' }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @else
+            <p class="vt-muted" style="font-size:.875rem">{{ __('No income data yet for :year to build a prediction from.', ['year' => $this->selectedYear]) }}</p>
+        @endif
+    </x-filament::section>
+
     <x-filament-actions::modals />
 </x-filament-panels::page>

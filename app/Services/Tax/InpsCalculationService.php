@@ -20,9 +20,27 @@ class InpsCalculationService
 
         if (TaxRules::isLaw() && in_array($customer->customer_type, [CustomerType::Artigiani, CustomerType::Commercianti], true)
             && ($rule = InpsContributionRule::for($customer->customer_type, $year))) {
-            return $this->fixedPlusPercentage($customer, $year, $taxableIncome, $rule);
+            return InpsCalculation::updateOrCreate(
+                ['customer_id' => $customer->id, 'tax_year' => $year],
+                $this->computeFixedPlusPercentage($customer, $year, $taxableIncome, $rule)
+            );
         }
 
+        return InpsCalculation::updateOrCreate(
+            ['customer_id' => $customer->id, 'tax_year' => $year],
+            $this->computeSlabPercentage($customer, $year, $taxableIncome)
+        );
+    }
+
+    /**
+     * Legacy slab path (flat income-bracket table) and Gestione Separata
+     * (always, regardless of "law"/"legacy" mode — GS has no minimale
+     * concept). Pure: reads the DB for slabs/settings but never writes.
+     *
+     * @return array<string, mixed> same shape InpsCalculation::updateOrCreate() expects
+     */
+    public function computeSlabPercentage(Customer $customer, int $year, float $taxableIncome): array
+    {
         $slabs = InpsRateSlab::where('slab_year', $year)
             ->where('is_active', true)
             ->where(function ($q) use ($customer) {
@@ -100,21 +118,18 @@ class InpsCalculationService
         $discountAmount = $discountPercentage > 0 ? round($inpsAmount * $discountPercentage / 100, 2) : 0.0;
         $afterDiscount = round($inpsAmount - $discountAmount, 2);
 
-        return InpsCalculation::updateOrCreate(
-            ['customer_id' => $customer->id, 'tax_year' => $year],
-            [
-                'taxable_income' => $taxableIncome,
-                'inps_rate' => $averageRate,
-                'inps_amount' => $inpsAmount,
-                'fixed_amount' => null,
-                'variable_amount' => null,
-                'discount_percentage' => $discountPercentage,
-                'discount_amount' => $discountAmount,
-                'inps_amount_after_discount' => $afterDiscount,
-                'slab_details' => $slabDetails,
-                'calculation_method' => $method,
-            ]
-        );
+        return [
+            'taxable_income' => $taxableIncome,
+            'inps_rate' => $averageRate,
+            'inps_amount' => $inpsAmount,
+            'fixed_amount' => null,
+            'variable_amount' => null,
+            'discount_percentage' => $discountPercentage,
+            'discount_amount' => $discountAmount,
+            'inps_amount_after_discount' => $afterDiscount,
+            'slab_details' => $slabDetails,
+            'calculation_method' => $method,
+        ];
     }
 
     /**
@@ -125,8 +140,11 @@ class InpsCalculationService
      *    more above it, nothing above the massimale.
      * The income base is the forfettario income before deducting INPS.
      * The forfettario reduction (35%) applies to both parts.
+     * Pure: reads customer/rule/settings but never writes.
+     *
+     * @return array<string, mixed> same shape InpsCalculation::updateOrCreate() expects
      */
-    private function fixedPlusPercentage(Customer $customer, int $year, float $income, InpsContributionRule $rule): InpsCalculation
+    public function computeFixedPlusPercentage(Customer $customer, int $year, float $income, InpsContributionRule $rule): array
     {
         $start = $customer->business_start_date;
         $months = match (true) {
@@ -163,22 +181,19 @@ class InpsCalculationService
         $discountPercentage = $customer->inps_discount_eligible ? (float) Setting::get('inps_discount_percent', 35) : 0.0;
         $discountAmount = round($total * $discountPercentage / 100, 2);
 
-        return InpsCalculation::updateOrCreate(
-            ['customer_id' => $customer->id, 'tax_year' => $year],
-            [
-                'taxable_income' => $income,
-                'inps_rate' => $income > 0 ? round($total / $income * 100, 2) : 0,
-                'inps_amount' => $total,
-                'fixed_amount' => $fixed,
-                'variable_amount' => $variable,
-                'discount_percentage' => $discountPercentage,
-                'discount_amount' => $discountAmount,
-                'inps_amount_after_discount' => round($total - $discountAmount, 2),
-                'slab_details' => $details,
-                'calculation_method' => InpsCalculationMethod::FixedPlusPercentage,
-                'notes' => $rule->isVerified() ? null : $rule->source,
-            ]
-        );
+        return [
+            'taxable_income' => $income,
+            'inps_rate' => $income > 0 ? round($total / $income * 100, 2) : 0,
+            'inps_amount' => $total,
+            'fixed_amount' => $fixed,
+            'variable_amount' => $variable,
+            'discount_percentage' => $discountPercentage,
+            'discount_amount' => $discountAmount,
+            'inps_amount_after_discount' => round($total - $discountAmount, 2),
+            'slab_details' => $details,
+            'calculation_method' => InpsCalculationMethod::FixedPlusPercentage,
+            'notes' => $rule->isVerified() ? null : $rule->source,
+        ];
     }
 
     /** The fixed / above-minimum split of the amount actually due (after the reduction). */

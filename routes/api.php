@@ -122,6 +122,11 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->whereNumber('id')
                 ->name('receipt');
             Route::get('/{year}', [TaxController::class, 'show'])->whereNumber('year')->name('show');
+            // Representative prediction — entirely separate from the real
+            // calculation above, see TaxController::prediction().
+            Route::get('/{year}/prediction', [TaxController::class, 'prediction'])->whereNumber('year')->name('prediction');
+            Route::post('/{year}/{month}/close', [TaxController::class, 'closeMonth'])->whereNumber(['year', 'month'])->name('close-month');
+            Route::delete('/{year}/{month}/close', [TaxController::class, 'reopenMonth'])->whereNumber(['year', 'month'])->name('reopen-month');
             Route::get('/{year}/annual-report', [TaxController::class, 'annualReport'])->whereNumber('year')->name('annual-report');
             Route::get('/{year}/redditi-report', [TaxController::class, 'redditiReport'])->whereNumber('year')->name('redditi-report');
             Route::get('/f24/{date}', [TaxController::class, 'f24Sheet'])->name('f24-sheet');

@@ -7,6 +7,8 @@ use App\Models\Customer;
 use App\Models\IncomeImportBatch;
 use App\Models\TaxCalculation;
 use App\Services\Tax\Import\IncomeDataImportService;
+use App\Services\Tax\IncomeClosingService;
+use App\Services\Tax\IncomePredictionService;
 use App\Services\Tax\PaymentCalendarService;
 use App\Services\Tax\PaymentRegistry;
 use App\Services\Tax\RavvedimentoService;
@@ -99,6 +101,21 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
     public function getOverview(): array
     {
         return app(TaxOverviewService::class)->build($this->customerRecord, $this->selectedYear);
+    }
+
+    /**
+     * Entirely separate from getOverview() above — a representative,
+     * year-over-year estimate (IncomePredictionService::predictRepresentative()),
+     * not an official figure, and never affects any real tax/INPS
+     * calculation. Rendered in its own section on the page, not merged
+     * into the real month-by-month data anywhere.
+     */
+    public function getPrediction(): array
+    {
+        return [
+            'closed_months' => app(IncomeClosingService::class)->closedMonths($this->customerRecord, $this->selectedYear),
+            'prediction' => app(IncomePredictionService::class)->predictRepresentative($this->customerRecord, $this->selectedYear),
+        ];
     }
 
     public function previousYearUrl(): string
