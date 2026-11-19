@@ -80,6 +80,32 @@ class CustomerTaxDashboardTest extends TestCase
         ]);
     }
 
+    public function test_employee_cost_entered_in_the_review_modal_is_persisted_and_survives_a_later_recalculation(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.tax.employee_cost', 25000.00)
+            ->callMountedAction()
+            ->assertOk();
+
+        $this->assertDatabaseHas('tax_calculations', [
+            'customer_id' => $this->customer->id, 'tax_year' => 2025, 'employee_cost' => 25000.00,
+        ]);
+
+        // Recalculating again without re-entering it must not wipe it out.
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->callAction('recalculate')
+            ->assertOk();
+
+        $this->assertDatabaseHas('tax_calculations', [
+            'customer_id' => $this->customer->id, 'tax_year' => 2025, 'employee_cost' => 25000.00,
+        ]);
+    }
+
     public function test_recalculate_modal_auto_populates_the_inps_net_when_the_discount_percentage_changes(): void
     {
         $this->actingAs($this->admin);

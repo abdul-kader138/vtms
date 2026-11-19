@@ -311,7 +311,9 @@ class TaxOverviewService
      * limit (€85k by default) the regime ends from 1 January of the next
      * year; above the immediate-exit threshold (€100k, configurable in Tax
      * Settings) it ends immediately and VAT applies from the invoice that
-     * crossed it.
+     * crossed it. Employee/collaborator costs above their own separate
+     * limit (see employeeCostWarnings()) carry the same next-year
+     * consequence as the revenue limit, but never the immediate one.
      *
      * @return list<array{level: string, message: string}>
      */
@@ -328,29 +330,63 @@ class TaxOverviewService
 
         $fmt = fn (float $v) => '€'.number_format($v, 2, ',', '.');
 
+        $revenueWarnings = [];
+
         if ($immediateThreshold > 0 && $sales > $immediateThreshold) {
-            return [[
+            $revenueWarnings[] = [
                 'level' => 'danger',
                 'message' => __('Revenue :sales exceeds :threshold — the customer leaves Regime Forfettario immediately in :year and VAT applies from the invoice that crossed the threshold.', ['sales' => $fmt($sales), 'threshold' => $fmt($immediateThreshold), 'year' => $year]),
-            ]];
-        }
-
-        if ($limit > 0 && $sales > $limit) {
-            return [[
+            ];
+        } elseif ($limit > 0 && $sales > $limit) {
+            $revenueWarnings[] = [
                 'level' => 'warning',
                 'message' => __('Revenue :sales exceeds the :limit limit — the customer is no longer eligible for Regime Forfettario from 1 January :next.', ['sales' => $fmt($sales), 'limit' => $fmt($limit), 'next' => $year + 1]),
-            ]];
+            ];
+        } else {
+            $prediction = $this->predictionService->predict($customer, $year);
+
+            if ($limit > 0 && $prediction && $prediction['missing_months'] !== [] && $prediction['predicted_total_sales'] > $limit) {
+                $revenueWarnings[] = [
+                    'level' => 'info',
+                    'message' => __('At the current pace revenue is projected to reach :predicted, above the :limit Regime Forfettario limit.', ['predicted' => $fmt($prediction['predicted_total_sales']), 'limit' => $fmt($limit)]),
+                ];
+            }
         }
 
-        $prediction = $this->predictionService->predict($customer, $year);
+        return [...$revenueWarnings, ...$this->employeeCostWarnings($customer, $year, $tax)];
+    }
 
-        if ($limit > 0 && $prediction && $prediction['missing_months'] !== [] && $prediction['predicted_total_sales'] > $limit) {
-            return [[
-                'level' => 'info',
-                'message' => __('At the current pace revenue is projected to reach :predicted, above the :limit Regime Forfettario limit.', ['predicted' => $fmt($prediction['predicted_total_sales']), 'limit' => $fmt($limit)]),
-            ]];
+    /**
+     * Regime Forfettario (L. 197/2022, commi 54-55): gross cost of
+     * employees/collaborators above Customer::employee_cost_limit (€20k by
+     * default) also ends eligibility from the following year. Unlike
+     * revenue, the app has no income-side source to compute this from —
+     * it's entered manually on the calculation row (TaxCalculation::employee_cost,
+     * see CustomerTaxDashboard's review modal) — so there's nothing to warn
+     * about until a figure has actually been entered for the year.
+     *
+     * @return list<array{level: string, message: string}>
+     */
+    private function employeeCostWarnings(Customer $customer, int $year, ?TaxCalculation $tax): array
+    {
+        if ($tax === null || $tax->employee_cost === null) {
+            return [];
         }
 
-        return [];
+        $limit = (float) ($customer->employee_cost_limit ?? 20000);
+        $cost = (float) $tax->employee_cost;
+
+        if ($limit <= 0 || $cost <= $limit) {
+            return [];
+        }
+
+        return [[
+            'level' => 'warning',
+            'message' => __('Employee/collaborator costs :cost exceed the :limit Regime Forfettario limit — the customer is no longer eligible for Regime Forfettario from 1 January :next.', [
+                'cost' => '€'.number_format($cost, 2, ',', '.'),
+                'limit' => '€'.number_format($limit, 2, ',', '.'),
+                'next' => $year + 1,
+            ]),
+        ]];
     }
 }

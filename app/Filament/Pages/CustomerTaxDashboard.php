@@ -547,6 +547,11 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             ->modalWidth('4xl')
             ->fillForm(function () {
                 $preview = app(TaxCalculationOrchestrator::class)->preview($this->customerRecord, $this->selectedYear);
+                // Not computed by anything — compute() never returns it, so
+                // without this it would be missing from the form entirely
+                // and submitting would silently null out whatever was
+                // entered last time (see TaxOverviewService::employeeCostWarnings()).
+                $preview['tax']['employee_cost'] = $this->getTaxCalculation()?->employee_cost;
                 $rawSchedule = app(PaymentScheduleService::class)->previewForYear($this->customerRecord, $this->selectedYear, $preview);
 
                 $this->reviewBaseline = $preview;
@@ -566,6 +571,8 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'advance_payments_made')),
                         TextInput::make('tax.balance_payment')->label(__('Balance payment'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'balance_payment')),
+                        TextInput::make('tax.employee_cost')->label(__('Employee/collaborator costs this year'))->numeric()->prefix('€')
+                            ->helperText(fn () => __('Regime Forfettario limit: € :limit. Leave blank if not tracked.', ['limit' => number_format((float) ($this->customerRecord->employee_cost_limit ?? 20000), 2, ',', '.')])),
                         Textarea::make('tax.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
                             ->helperText(__('Required only if a figure above was changed from its computed value.')),
                     ])

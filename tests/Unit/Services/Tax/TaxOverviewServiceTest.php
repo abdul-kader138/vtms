@@ -167,6 +167,50 @@ class TaxOverviewServiceTest extends TestCase
         $this->assertSame([], app(TaxOverviewService::class)->eligibilityWarnings($this->customer, 2025, null));
     }
 
+    public function test_warns_when_employee_cost_exceeds_the_limit(): void
+    {
+        $this->income('2025-01-10', 1000);
+        $this->customer->update(['employee_cost_limit' => 20000]);
+        $tax = TaxCalculation::create([
+            'customer_id' => $this->customer->id, 'tax_year' => 2025, 'total_sales' => 1000, 'taxable_income' => 670,
+            'coefficient_used' => 67, 'tax_rate_used' => 5, 'tax_due' => 33.5, 'advance_payments_made' => 0, 'balance_payment' => 33.5,
+            'next_year_advance_base' => 26.8, 'employee_cost' => 25000,
+        ]);
+
+        $warnings = app(TaxOverviewService::class)->eligibilityWarnings($this->customer, 2025, $tax);
+
+        $this->assertSame('warning', $warnings[0]['level']);
+        $this->assertStringContainsString('1 January 2026', $warnings[0]['message']);
+        $this->assertStringContainsString('25.000,00', $warnings[0]['message']);
+    }
+
+    public function test_no_employee_cost_warning_when_nothing_has_been_entered(): void
+    {
+        $this->income('2025-01-10', 1000);
+        $tax = TaxCalculation::create([
+            'customer_id' => $this->customer->id, 'tax_year' => 2025, 'total_sales' => 1000, 'taxable_income' => 670,
+            'coefficient_used' => 67, 'tax_rate_used' => 5, 'tax_due' => 33.5, 'advance_payments_made' => 0, 'balance_payment' => 33.5,
+            'next_year_advance_base' => 26.8,
+        ]);
+
+        $this->assertSame([], app(TaxOverviewService::class)->eligibilityWarnings($this->customer, 2025, $tax));
+    }
+
+    public function test_both_revenue_and_employee_cost_warnings_can_appear_together(): void
+    {
+        $tax = TaxCalculation::create([
+            'customer_id' => $this->customer->id, 'tax_year' => 2025, 'total_sales' => 90000, 'taxable_income' => 60300,
+            'coefficient_used' => 67, 'tax_rate_used' => 5, 'tax_due' => 3015, 'advance_payments_made' => 0, 'balance_payment' => 3015,
+            'next_year_advance_base' => 2412, 'employee_cost' => 25000,
+        ]);
+
+        $warnings = app(TaxOverviewService::class)->eligibilityWarnings($this->customer, 2025, $tax);
+
+        $this->assertCount(2, $warnings);
+        $this->assertStringContainsString('Revenue', $warnings[0]['message']);
+        $this->assertStringContainsString('Employee', $warnings[1]['message']);
+    }
+
     public function test_hidden_costs_include_the_non_refundable_foreign_service_iva(): void
     {
         ForeignServicePurchase::create(['customer_id' => $this->customer->id, 'purchase_date' => '2025-03-01', 'provider' => 'Facebook Ads', 'amount' => 200]);

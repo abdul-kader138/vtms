@@ -17,6 +17,7 @@ class TaxCalculation extends Model
         'coefficient_used', 'tax_rate_used', 'tax_due',
         'advance_payments_made', 'balance_payment', 'next_year_advance_base', 'rules',
         'is_manually_adjusted', 'adjusted_by', 'adjusted_at', 'adjustment_reason',
+        'employee_cost',
     ];
 
     protected function casts(): array
@@ -32,6 +33,7 @@ class TaxCalculation extends Model
             'advance_payments_made' => 'decimal:2',
             'balance_payment' => 'decimal:2',
             'next_year_advance_base' => 'decimal:2',
+            'employee_cost' => 'decimal:2',
             'is_manually_adjusted' => 'boolean',
             'adjusted_at' => 'datetime',
         ];
