@@ -167,6 +167,69 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
 
         $set('inps.discount_amount', $discountAmount);
         $set('inps.inps_amount_after_discount', round($base - $discountAmount, 2));
+
+        $this->resyncInpsSchedule($set, $get);
+    }
+
+    /** inps.discount_amount changed — re-derive discount_percentage and the net after it. */
+    private function recalculateInpsNetFromDiscountAmount(Set $set, Get $get): void
+    {
+        $base = (float) $get('inps.inps_amount');
+        $discountAmount = (float) $get('inps.discount_amount');
+
+        $set('inps.discount_percentage', $base > 0 ? round($discountAmount / $base * 100, 2) : 0);
+        $set('inps.inps_amount_after_discount', round($base - $discountAmount, 2));
+
+        $this->resyncInpsSchedule($set, $get);
+    }
+
+    /**
+     * The INPS net (inps_amount_after_discount) changed — re-split it into
+     * the provisional INPS installments, replacing any hand-edited
+     * installment amounts, and move the group's baseline to the new split
+     * so rebalanceScheduleGroup() keeps the group summing to the new net.
+     */
+    private function resyncInpsSchedule(Set $set, Get $get): void
+    {
+        $this->resyncScheduleGroup($set, 'inps', [
+            'discount_percentage' => (float) $get('inps.discount_percentage'),
+            'inps_amount_after_discount' => (float) $get('inps.inps_amount_after_discount'),
+        ]);
+    }
+
+    /**
+     * tax.tax_due or tax.balance_payment changed — re-derive the provisional
+     * tax installments (balance + advances), replacing any hand-edited
+     * installment amounts, same as resyncInpsSchedule() does for INPS.
+     */
+    private function resyncTaxSchedule(Set $set, Get $get): void
+    {
+        $this->resyncScheduleGroup($set, 'tax', [
+            'tax_due' => (float) $get('tax.tax_due'),
+            'balance_payment' => (float) $get('tax.balance_payment'),
+        ]);
+    }
+
+    /**
+     * Re-runs the schedule preview for one group from its modal-open values
+     * overlaid with $currentValues, then replaces both that group's baseline
+     * (so rebalanceScheduleGroup() targets the new total, and the set of
+     * visible rows follows the new split) and its 'schedule.*' form state.
+     *
+     * @param  'tax'|'inps'  $group
+     * @param  array<string, float>  $currentValues
+     */
+    private function resyncScheduleGroup(Set $set, string $group, array $currentValues): void
+    {
+        $values = [$group => array_merge($this->reviewBaseline[$group] ?? [], $currentValues)];
+
+        $schedule = $this->normalizeScheduleBaseline(
+            app(PaymentScheduleService::class)->previewForYear($this->customerRecord, $this->selectedYear, $values)
+        );
+
+        $this->reviewBaseline['schedule'][$group] = $schedule[$group];
+
+        $set("schedule.{$group}", collect($schedule[$group])->map(fn (array $row) => ['amount' => $row['amount'], 'due_date' => $row['due_date']])->all());
     }
 
     /**
@@ -194,6 +257,8 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
         // — everything else in $this->reviewBaseline stays as it was at fillForm time.
         $this->reviewBaseline['inps']['fixed_amount'] = $expected['fixed_amount'] ?? null;
         $this->reviewBaseline['inps']['calculation_method'] = $expected['calculation_method'] ?? null;
+
+        $this->resyncInpsSchedule($set, $get);
     }
 
     /**
@@ -566,10 +631,12 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                             ->afterStateUpdated(fn (Set $set, Get $get) => $this->resyncInpsForTaxableIncome($set, $get))
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'taxable_income')),
                         TextInput::make('tax.tax_due')->label(__('Tax due'))->numeric()->prefix('€')->required()->live()
+                            ->afterStateUpdated(fn (Set $set, Get $get) => $this->resyncTaxSchedule($set, $get))
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'tax_due')),
                         TextInput::make('tax.advance_payments_made')->label(__('Advances already made'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'advance_payments_made')),
                         TextInput::make('tax.balance_payment')->label(__('Balance payment'))->numeric()->prefix('€')->required()->live()
+                            ->afterStateUpdated(fn (Set $set, Get $get) => $this->resyncTaxSchedule($set, $get))
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'balance_payment')),
                         TextInput::make('tax.employee_cost')->label(__('Employee/collaborator costs this year'))->numeric()->prefix('€')
                             ->helperText(fn () => __('Regime Forfettario limit: € :limit. Leave blank if not tracked.', ['limit' => number_format((float) ($this->customerRecord->employee_cost_limit ?? 20000), 2, ',', '.')])),
@@ -586,14 +653,10 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                             ->afterStateUpdated(fn (Set $set, Get $get) => $this->recalculateInpsNet($set, $get))
                             ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'discount_percentage')),
                         TextInput::make('inps.discount_amount')->label(__('Discount amount'))->numeric()->prefix('€')->required()->live()
-                            ->afterStateUpdated(function (Set $set, Get $get) {
-                                $base = (float) $get('inps.inps_amount');
-                                $discountAmount = (float) $get('inps.discount_amount');
-                                $set('inps.discount_percentage', $base > 0 ? round($discountAmount / $base * 100, 2) : 0);
-                                $set('inps.inps_amount_after_discount', round($base - $discountAmount, 2));
-                            })
+                            ->afterStateUpdated(fn (Set $set, Get $get) => $this->recalculateInpsNetFromDiscountAmount($set, $get))
                             ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'discount_amount')),
                         TextInput::make('inps.inps_amount_after_discount')->label(__('Amount after discount'))->numeric()->prefix('€')->required()->live()
+                            ->afterStateUpdated(fn (Set $set, Get $get) => $this->resyncInpsSchedule($set, $get))
                             ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'inps_amount_after_discount')),
                         Placeholder::make('slab_mismatch_warning')
                             ->hiddenLabel()

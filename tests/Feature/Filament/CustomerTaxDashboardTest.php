@@ -152,6 +152,56 @@ class CustomerTaxDashboardTest extends TestCase
             ->assertSet('mountedActionsData.0.schedule.inps.3.amount', round($installment3 / $othersTotal * $groupTotal, 2));
     }
 
+    public function test_changing_the_inps_discount_amount_resplits_the_inps_installments_to_the_new_net(): void
+    {
+        $this->actingAs($this->admin);
+
+        $preview = app(TaxCalculationOrchestrator::class)->preview($this->customer, 2025);
+        $preview['inps']['discount_amount'] = 100.00;
+        $preview['inps']['discount_percentage'] = round(100.00 / (float) $preview['inps']['inps_amount'] * 100, 2);
+        $preview['inps']['inps_amount_after_discount'] = round((float) $preview['inps']['inps_amount'] - 100.00, 2);
+        $expectedSchedule = app(PaymentScheduleService::class)->previewForYear($this->customer, 2025, $preview)['inps'];
+
+        $component = Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.inps.discount_amount', 100.00)
+            ->assertSet('mountedActionsData.0.inps.inps_amount_after_discount', $preview['inps']['inps_amount_after_discount']);
+
+        foreach ($expectedSchedule as $key => $row) {
+            $component->assertSet("mountedActionsData.0.schedule.inps.{$key}.amount", $row['amount']);
+        }
+
+        // A later hand-edit must rebalance against the new net, not the one the modal opened with.
+        $component->set('mountedActionsData.0.schedule.inps.1.amount', 0);
+        $installmentsTotal = collect(array_keys($expectedSchedule))
+            ->sum(fn ($key) => (float) $component->get("mountedActionsData.0.schedule.inps.{$key}.amount"));
+
+        $this->assertEqualsWithDelta($preview['inps']['inps_amount_after_discount'], $installmentsTotal, 0.001);
+    }
+
+    public function test_changing_tax_due_and_balance_payment_resplits_the_tax_installments(): void
+    {
+        $this->actingAs($this->admin);
+
+        $preview = app(TaxCalculationOrchestrator::class)->preview($this->customer, 2025);
+        $preview['tax']['tax_due'] = 2000.00;
+        $preview['tax']['balance_payment'] = 500.00;
+        $expectedSchedule = app(PaymentScheduleService::class)->previewForYear($this->customer, 2025, $preview)['tax'];
+
+        $component = Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.tax.tax_due', 2000.00)
+            ->set('mountedActionsData.0.tax.balance_payment', 500.00);
+
+        $this->assertNotEmpty($expectedSchedule);
+        $this->assertSame(array_keys($expectedSchedule), array_keys($component->get('mountedActionsData.0.schedule.tax')));
+        foreach ($expectedSchedule as $key => $row) {
+            $component->assertSet("mountedActionsData.0.schedule.tax.{$key}.amount", $row['amount']);
+        }
+    }
+
     public function test_changing_taxable_income_resyncs_the_inps_figures_to_the_new_slab(): void
     {
         $this->actingAs($this->admin);
