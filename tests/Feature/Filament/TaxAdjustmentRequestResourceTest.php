@@ -12,7 +12,9 @@ use App\Services\Tax\TaxCalculationOrchestrator;
 use Database\Seeders\InpsRateSlabSeeder;
 use Database\Seeders\ShieldSeeder;
 use Database\Seeders\TaxSettingsSeeder;
+use Filament\Notifications\DatabaseNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -130,5 +132,47 @@ class TaxAdjustmentRequestResourceTest extends TestCase
 
         $this->assertDatabaseHas('tax_adjustment_requests', ['id' => $request->id, 'status' => 'pending']);
         $this->assertDatabaseMissing('inps_calculations', ['customer_id' => $this->customer->id, 'tax_year' => 2025]);
+    }
+
+    public function test_creating_a_pending_request_notifies_every_approver(): void
+    {
+        Notification::fake();
+
+        $requester = User::factory()->create();
+        $approver = User::where('email', env('ADMIN_EMAIL', 'admin@admin.com'))->firstOrFail();
+        $nonApprover = User::factory()->create();
+
+        $this->createPendingRequest($requester);
+
+        Notification::assertSentTo($approver, DatabaseNotification::class);
+        Notification::assertNotSentTo($nonApprover, DatabaseNotification::class);
+    }
+
+    public function test_approving_a_request_notifies_the_requester(): void
+    {
+        Notification::fake();
+
+        $requester = User::factory()->create();
+        $approver = User::where('email', env('ADMIN_EMAIL', 'admin@admin.com'))->firstOrFail();
+        $request = $this->createPendingRequest($requester);
+
+        $this->actingAs($approver);
+        Livewire::test(ListTaxAdjustmentRequests::class)->callTableAction('approve', $request)->assertOk();
+
+        Notification::assertSentTo($requester, DatabaseNotification::class);
+    }
+
+    public function test_rejecting_a_request_notifies_the_requester(): void
+    {
+        Notification::fake();
+
+        $requester = User::factory()->create();
+        $approver = User::where('email', env('ADMIN_EMAIL', 'admin@admin.com'))->firstOrFail();
+        $request = $this->createPendingRequest($requester);
+
+        $this->actingAs($approver);
+        Livewire::test(ListTaxAdjustmentRequests::class)->callTableAction('reject', $request, data: ['review_note' => 'Not justified.'])->assertOk();
+
+        Notification::assertSentTo($requester, DatabaseNotification::class);
     }
 }

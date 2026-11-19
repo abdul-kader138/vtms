@@ -3,6 +3,9 @@
 namespace App\Models;
 
 use App\Enums\TaxAdjustmentRequestStatus;
+use App\Filament\Resources\TaxAdjustmentRequestResource;
+use Filament\Notifications\Actions\Action as NotificationAction;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
@@ -42,6 +45,70 @@ class TaxAdjustmentRequest extends Model
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
             ->useLogName('tax_adjustment_request');
+    }
+
+    /**
+     * A pending request otherwise just sits in the queue until someone
+     * happens to open Tax Adjustment Requests — notify everyone who can
+     * actually act on it (database/bell notification, matching the panel's
+     * existing databaseNotifications() setup) the moment it's created, and
+     * notify the original requester back once it's been approved or
+     * rejected.
+     */
+    protected static function booted(): void
+    {
+        static::created(function (self $request) {
+            if ($request->status === TaxAdjustmentRequestStatus::Pending) {
+                $request->notifyApprovers();
+            }
+        });
+
+        static::updated(function (self $request) {
+            if ($request->isDirty('status') && in_array($request->status, [TaxAdjustmentRequestStatus::Approved, TaxAdjustmentRequestStatus::Rejected], true)) {
+                $request->notifyRequester();
+            }
+        });
+    }
+
+    private function notifyApprovers(): void
+    {
+        $approvers = User::permission('finalize_tax_calculation')->get();
+
+        if ($approvers->isEmpty()) {
+            return;
+        }
+
+        Notification::make()
+            ->title(__('New tax adjustment request'))
+            ->body(__(':customer, :year — submitted by :by.', [
+                'customer' => $this->customer?->name ?? __('Unknown customer'),
+                'year' => $this->tax_year,
+                'by' => $this->requestedBy?->name ?? __('a staff member'),
+            ]))
+            ->icon('heroicon-o-inbox-stack')
+            ->actions([
+                NotificationAction::make('review')->label(__('Review'))->url(TaxAdjustmentRequestResource::getUrl())->markAsRead(),
+            ])
+            ->sendToDatabase($approvers);
+    }
+
+    private function notifyRequester(): void
+    {
+        if ($this->requestedBy === null) {
+            return;
+        }
+
+        $approved = $this->status === TaxAdjustmentRequestStatus::Approved;
+
+        $notification = Notification::make()
+            ->title($approved ? __('Your tax adjustment request was approved') : __('Your tax adjustment request was rejected'))
+            ->body(__(':customer, :year', ['customer' => $this->customer?->name ?? __('Unknown customer'), 'year' => $this->tax_year])
+                .($this->review_note ? ' — '.$this->review_note : ''))
+            ->icon($approved ? 'heroicon-o-check-circle' : 'heroicon-o-x-circle');
+
+        $approved ? $notification->success() : $notification->danger();
+
+        $notification->sendToDatabase($this->requestedBy);
     }
 
     public function customer(): BelongsTo
