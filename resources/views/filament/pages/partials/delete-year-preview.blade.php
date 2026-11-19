@@ -13,7 +13,11 @@
             </tbody>
         </table>
 
-        @if ($preview['deletable'])
+        @if ($preview['locked'])
+            <p style="margin-top:.75rem; font-weight:600; color:var(--vt-danger, #dc2626)">
+                {{ __('Blocked — :year is locked. Unlock it first if this year genuinely needs to be removed.', ['year' => $year]) }}
+            </p>
+        @elseif ($preview['deletable'])
             <p class="vt-muted vt-small" style="margin-top:.5rem">{{ __('None of these payments have been paid, cancelled, receipted or self-reported — safe to delete.') }}</p>
         @else
             <p style="margin-top:.75rem; font-weight:600; color:var(--vt-danger, #dc2626)">

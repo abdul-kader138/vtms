@@ -7,6 +7,7 @@ use App\Models\IncomeData;
 use App\Models\InpsPayment;
 use App\Models\Setting;
 use App\Models\TaxPayment;
+use App\Models\TaxYearLock;
 use App\Services\Tax\PaymentScheduleService;
 use App\Services\Tax\TaxCalculationOrchestrator;
 use App\Services\Tax\TaxYearDeletionService;
@@ -126,6 +127,24 @@ class TaxYearDeletionServiceTest extends TestCase
 
         $this->expectException(RuntimeException::class);
         app(TaxYearDeletionService::class)->delete($this->customer, 2024);
+    }
+
+    public function test_delete_refuses_a_locked_year_even_with_nothing_else_touched(): void
+    {
+        TaxYearLock::create(['customer_id' => $this->customer->id, 'tax_year' => 2024, 'locked_at' => now()]);
+
+        $preview = app(TaxYearDeletionService::class)->preview($this->customer, 2024);
+        $this->assertTrue($preview['locked']);
+        $this->assertFalse($preview['deletable']);
+        $this->assertSame([], $preview['blockers']);
+
+        $this->expectException(RuntimeException::class);
+
+        try {
+            app(TaxYearDeletionService::class)->delete($this->customer, 2024);
+        } finally {
+            $this->assertDatabaseHas('tax_calculations', ['customer_id' => $this->customer->id, 'tax_year' => 2024]);
+        }
     }
 
     public function test_delete_is_a_no_op_when_the_year_has_no_data(): void

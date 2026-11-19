@@ -13,6 +13,7 @@ use App\Models\InpsCalculation;
 use App\Models\InpsPayment;
 use App\Models\TaxCalculation;
 use App\Models\TaxPayment;
+use App\Models\TaxYearLock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -55,12 +56,14 @@ class TaxYearDeletionService
      * @return array{
      *     has_data: bool,
      *     deletable: bool,
+     *     locked: bool,
      *     counts: array<string, int>,
      *     blockers: list<array{type: string, id: int, year: int, amount: float, paid_amount: float, paid_date: ?string, status: string, reported: bool, belongs_to_next_year: bool}>,
      * }
      */
     public function preview(Customer $customer, int $year): array
     {
+        $locked = TaxYearLock::where('customer_id', $customer->id)->where('tax_year', $year)->exists();
         $taxCalculation = TaxCalculation::where('customer_id', $customer->id)->where('tax_year', $year)->first();
         $inpsCalculation = InpsCalculation::where('customer_id', $customer->id)->where('tax_year', $year)->first();
         $inailCalculation = InailCalculation::where('customer_id', $customer->id)->where('tax_year', $year)->first();
@@ -97,7 +100,8 @@ class TaxYearDeletionService
 
         return [
             'has_data' => $taxCalculation || $inpsCalculation || $inailCalculation || $fatturaCalculation || $dirittoAnnuale,
-            'deletable' => $blockers === [],
+            'deletable' => $blockers === [] && ! $locked,
+            'locked' => $locked,
             'counts' => [
                 'tax_calculation' => $taxCalculation ? 1 : 0,
                 'inps_calculation' => $inpsCalculation ? 1 : 0,
@@ -111,8 +115,10 @@ class TaxYearDeletionService
     }
 
     /**
-     * @throws RuntimeException if any payment reachable from this year (this
-     *                          year's own, or a next-year one scheduled from it) has been touched.
+     * @throws RuntimeException if the year is locked (see TaxYearLock), or
+     *                          any payment reachable from this year (this
+     *                          year's own, or a next-year one scheduled
+     *                          from it) has been touched.
      */
     public function delete(Customer $customer, int $year): void
     {
@@ -120,6 +126,10 @@ class TaxYearDeletionService
 
         if (! $preview['has_data']) {
             return;
+        }
+
+        if ($preview['locked']) {
+            throw new RuntimeException("Cannot delete {$year}: it is locked. Unlock it first if this year genuinely needs to be removed.");
         }
 
         if (! $preview['deletable']) {

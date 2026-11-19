@@ -3,9 +3,16 @@
 namespace App\Filament\Pages;
 
 use App\Enums\PaymentStatus;
+use App\Enums\TaxAdjustmentRequestStatus;
+use App\Exceptions\Tax\ManualOverrideApprovalRequiredException;
 use App\Models\Customer;
+use App\Models\FatturaTraPrivatiCalculation;
+use App\Models\InailCalculation;
 use App\Models\IncomeImportBatch;
+use App\Models\InpsCalculation;
+use App\Models\TaxAdjustmentRequest;
 use App\Models\TaxCalculation;
+use App\Models\TaxYearLock;
 use App\Services\Tax\Import\IncomeDataImportService;
 use App\Services\Tax\IncomeClosingService;
 use App\Services\Tax\IncomePredictionService;
@@ -25,7 +32,9 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -99,6 +108,41 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
         return TaxCalculation::where('customer_id', $this->customerRecord->id)->where('tax_year', $this->selectedYear)->first();
     }
 
+    public function getInpsCalculation(): ?InpsCalculation
+    {
+        return InpsCalculation::where('customer_id', $this->customerRecord->id)->where('tax_year', $this->selectedYear)->first();
+    }
+
+    public function getInailCalculation(): ?InailCalculation
+    {
+        return InailCalculation::where('customer_id', $this->customerRecord->id)->where('tax_year', $this->selectedYear)->first();
+    }
+
+    public function getFatturaCalculation(): ?FatturaTraPrivatiCalculation
+    {
+        return FatturaTraPrivatiCalculation::where('customer_id', $this->customerRecord->id)->where('tax_year', $this->selectedYear)->first();
+    }
+
+    public function getYearLock(): ?TaxYearLock
+    {
+        return TaxYearLock::where('customer_id', $this->customerRecord->id)->where('tax_year', $this->selectedYear)->first();
+    }
+
+    public function isYearLocked(): bool
+    {
+        return $this->getYearLock() !== null;
+    }
+
+    /** Shown as helper text under a review-modal field so staff can eyeball a swing before saving — see plan item #5. */
+    private function previousValueHelper(?Model $calculation, string $field): ?string
+    {
+        if (! $calculation || $calculation->{$field} === null) {
+            return null;
+        }
+
+        return __('Previously: € :value', ['value' => number_format((float) $calculation->{$field}, 2, ',', '.')]);
+    }
+
     public function getOverview(): array
     {
         return app(TaxOverviewService::class)->build($this->customerRecord, $this->selectedYear);
@@ -156,6 +200,8 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                 ->button(),
             ActionGroup::make([
                 $this->recalculateForwardAction(),
+                $this->lockYearAction(),
+                $this->unlockYearAction(),
                 $this->deleteYearAction(),
             ])
                 ->icon('heroicon-m-ellipsis-vertical')
@@ -261,13 +307,75 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             ->openUrlInNewTab();
     }
 
+    /**
+     * Opens with every figure the 4 calculators would produce right now,
+     * already filled in via preview() — nothing is written yet. Staff can
+     * adjust any value (INPS discount, an installment split, a rounding
+     * edge case) before confirming; TaxCalculationOrchestrator::commit()
+     * then persists the edited figures and flags them is_manually_adjusted.
+     */
     public function recalculateAction(): Action
     {
         return Action::make('recalculate')
             ->label(__('Recalculate this year'))
             ->icon('heroicon-o-arrow-path')
-            ->requiresConfirmation()
-            ->action(function () {
+            ->disabled(fn () => $this->isYearLocked())
+            ->tooltip(fn () => $this->isYearLocked() ? __('This year is locked — unlock it first.') : null)
+            ->modalHeading(__('Review figures for :year', ['year' => $this->selectedYear]))
+            ->modalDescription(__('These are the freshly computed figures — adjust anything before saving. Paid payments are never rewritten. Changing a figure requires a reason, and saving it requires the finalize-tax-calculation permission.'))
+            ->modalSubmitActionLabel(__('Save'))
+            ->modalWidth('4xl')
+            ->fillForm(fn () => app(TaxCalculationOrchestrator::class)->preview($this->customerRecord, $this->selectedYear))
+            ->form([
+                Section::make(__('Income tax (Regime Forfettario)'))
+                    ->schema([
+                        TextInput::make('tax.taxable_income')->label(__('Taxable income'))->numeric()->prefix('€')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'taxable_income')),
+                        TextInput::make('tax.tax_due')->label(__('Tax due'))->numeric()->prefix('€')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'tax_due')),
+                        TextInput::make('tax.advance_payments_made')->label(__('Advances already made'))->numeric()->prefix('€')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'advance_payments_made')),
+                        TextInput::make('tax.balance_payment')->label(__('Balance payment'))->numeric()->prefix('€')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'balance_payment')),
+                        Textarea::make('tax.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
+                            ->helperText(__('Required only if a figure above was changed from its computed value.')),
+                    ])
+                    ->columns(2),
+                Section::make(__('INPS'))
+                    ->schema([
+                        TextInput::make('inps.inps_amount')->label(__('INPS amount'))->numeric()->prefix('€')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'inps_amount')),
+                        TextInput::make('inps.discount_percentage')->label(__('Discount %'))->numeric()->suffix('%')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'discount_percentage')),
+                        TextInput::make('inps.discount_amount')->label(__('Discount amount'))->numeric()->prefix('€')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'discount_amount')),
+                        TextInput::make('inps.inps_amount_after_discount')->label(__('Amount after discount'))->numeric()->prefix('€')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'inps_amount_after_discount')),
+                        Textarea::make('inps.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
+                            ->helperText(__('Required only if a figure above was changed from its computed value.')),
+                    ])
+                    ->columns(2),
+                Section::make(__('INAIL'))
+                    ->visible(fn (Get $get) => $get('inail.inail_final_amount') !== null)
+                    ->schema([
+                        TextInput::make('inail.inail_calculated_amount')->label(__('Calculated amount'))->numeric()->prefix('€')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getInailCalculation(), 'inail_calculated_amount')),
+                        TextInput::make('inail.inail_final_amount')->label(__('Final amount (after minimum)'))->numeric()->prefix('€')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getInailCalculation(), 'inail_final_amount')),
+                        Textarea::make('inail.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
+                            ->helperText(__('Required only if a figure above was changed from its computed value.')),
+                    ])
+                    ->columns(2),
+                Section::make(__('Imposta di bollo (fattura tra privati)'))
+                    ->visible(fn (Get $get) => $get('fattura_tra_privati.total_payment_amount') !== null)
+                    ->schema([
+                        TextInput::make('fattura_tra_privati.total_payment_amount')->label(__('Total stamp duty'))->numeric()->prefix('€')->required()
+                            ->helperText(fn () => $this->previousValueHelper($this->getFatturaCalculation(), 'total_payment_amount')),
+                        Textarea::make('fattura_tra_privati.adjustment_reason')->label(__('Reason for changes'))->rows(2)
+                            ->helperText(__('Required only if the figure above was changed from its computed value.')),
+                    ]),
+            ])
+            ->action(function (array $data) {
                 $orchestrator = app(TaxCalculationOrchestrator::class);
 
                 if ($mismatch = $orchestrator->ruleMismatch($this->customerRecord, $this->selectedYear)) {
@@ -277,12 +385,71 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                 }
 
                 try {
-                    $orchestrator->runForCustomerAndYear($this->customerRecord, $this->selectedYear);
+                    $result = $orchestrator->commit($this->customerRecord, $this->selectedYear, $data);
 
                     Notification::make()->success()->title(__('Recalculated'))->body(__('Tax figures for :year have been recalculated.', ['year' => $this->selectedYear]))->send();
+
+                    if ($result['variance_warnings'] !== []) {
+                        Notification::make()->warning()->persistent()
+                            ->title(__('Large manual adjustment(s) — please double-check'))
+                            ->body(implode("\n", $result['variance_warnings']))
+                            ->send();
+                    }
+                } catch (ManualOverrideApprovalRequiredException) {
+                    TaxAdjustmentRequest::create([
+                        'customer_id' => $this->customerRecord->id,
+                        'tax_year' => $this->selectedYear,
+                        'payload' => $data,
+                        'status' => TaxAdjustmentRequestStatus::Pending,
+                        'requested_by' => Auth::id(),
+                        'requested_at' => now(),
+                    ]);
+
+                    Notification::make()->warning()->persistent()
+                        ->title(__('Submitted for review'))
+                        ->body(__('You don\'t have permission to finalize a manual adjustment, so nothing was saved yet — it has been queued under Tax Adjustment Requests for someone with that permission to approve.'))
+                        ->send();
                 } catch (Throwable $e) {
                     Notification::make()->danger()->title(__('Recalculation failed'))->body($e->getMessage())->send();
                 }
+            });
+    }
+
+    /** Blocks any further recalculation of this year (manual or forward-walked) until unlockYearAction() is used. */
+    public function lockYearAction(): Action
+    {
+        return Action::make('lockYear')
+            ->label(__('Lock this year'))
+            ->icon('heroicon-o-lock-closed')
+            ->color('gray')
+            ->visible(fn () => ! $this->isYearLocked() && (Auth::user()?->can('finalize_tax_calculation') ?? false))
+            ->modalDescription(__('Locking :year prevents any further recalculation of it — including "recalculate forward" from an earlier year — until it is unlocked again.', ['year' => $this->selectedYear]))
+            ->form([
+                Textarea::make('reason')->label(__('Reason (optional)'))->rows(2),
+            ])
+            ->action(function (array $data) {
+                TaxYearLock::updateOrCreate(
+                    ['customer_id' => $this->customerRecord->id, 'tax_year' => $this->selectedYear],
+                    ['locked_by' => Auth::id(), 'locked_at' => now(), 'reason' => $data['reason'] ?? null],
+                );
+
+                Notification::make()->success()->title(__('Year locked'))->body(__(':year is now locked against recalculation.', ['year' => $this->selectedYear]))->send();
+            });
+    }
+
+    public function unlockYearAction(): Action
+    {
+        return Action::make('unlockYear')
+            ->label(__('Unlock this year'))
+            ->icon('heroicon-o-lock-open')
+            ->color('gray')
+            ->requiresConfirmation()
+            ->visible(fn () => $this->isYearLocked() && (Auth::user()?->can('finalize_tax_calculation') ?? false))
+            ->modalDescription(__('Allows :year to be recalculated again.', ['year' => $this->selectedYear]))
+            ->action(function () {
+                $this->getYearLock()?->delete();
+
+                Notification::make()->success()->title(__('Year unlocked'))->send();
             });
     }
 
@@ -364,6 +531,8 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             ->icon('heroicon-o-trash')
             ->color('danger')
             ->visible(fn () => app(TaxYearDeletionService::class)->preview($this->customerRecord, $this->selectedYear)['has_data'])
+            ->disabled(fn () => $this->isYearLocked())
+            ->tooltip(fn () => $this->isYearLocked() ? __('This year is locked — unlock it first.') : null)
             ->modalHeading(fn () => __('Delete :year?', ['year' => $this->selectedYear]))
             ->modalDescription(__('This removes the calculation and every payment it scheduled — including, for Artigiani/Commercianti, advances and excess-income installments it scheduled into next year.'))
             ->modalSubmitActionLabel(__('Delete this year'))

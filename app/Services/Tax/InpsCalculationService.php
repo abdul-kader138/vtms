@@ -16,20 +16,28 @@ class InpsCalculationService
 {
     public function calculateForYear(Customer $customer, int $year, TaxCalculation $taxCalculation): InpsCalculation
     {
+        return InpsCalculation::updateOrCreate(
+            ['customer_id' => $customer->id, 'tax_year' => $year],
+            $this->compute($customer, $year, $taxCalculation)
+        );
+    }
+
+    /**
+     * Pure math, no persistence — same value shape calculateForYear() stores.
+     * Lets a caller preview the figures before committing them.
+     *
+     * @return array<string, mixed>
+     */
+    public function compute(Customer $customer, int $year, TaxCalculation $taxCalculation): array
+    {
         $taxableIncome = $taxCalculation->grossIncome();
 
         if (TaxRules::isLaw() && in_array($customer->customer_type, [CustomerType::Artigiani, CustomerType::Commercianti], true)
             && ($rule = InpsContributionRule::for($customer->customer_type, $year))) {
-            return InpsCalculation::updateOrCreate(
-                ['customer_id' => $customer->id, 'tax_year' => $year],
-                $this->computeFixedPlusPercentage($customer, $year, $taxableIncome, $rule)
-            );
+            return $this->computeFixedPlusPercentage($customer, $year, $taxableIncome, $rule);
         }
 
-        return InpsCalculation::updateOrCreate(
-            ['customer_id' => $customer->id, 'tax_year' => $year],
-            $this->computeSlabPercentage($customer, $year, $taxableIncome)
-        );
+        return $this->computeSlabPercentage($customer, $year, $taxableIncome);
     }
 
     /**

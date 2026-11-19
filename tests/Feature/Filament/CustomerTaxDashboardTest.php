@@ -141,6 +141,69 @@ class CustomerTaxDashboardTest extends TestCase
         $this->assertSame('tax-receipts/already-uploaded.pdf', $payment->uploaded_pdf);
     }
 
+    public function test_recalculate_queues_an_adjustment_request_when_staff_lacks_finalize_permission(): void
+    {
+        $staff = User::factory()->create();
+        $this->actingAs($staff);
+
+        $preview = app(TaxCalculationOrchestrator::class)->preview($this->customer, 2025);
+        $overrideAmount = (float) $preview['inps']['inps_amount_after_discount'] + 10;
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->callAction('recalculate', data: [
+                'tax' => $preview['tax'],
+                'inps' => array_merge($preview['inps'], [
+                    'inps_amount_after_discount' => $overrideAmount,
+                    'adjustment_reason' => 'Testing the review queue.',
+                ]),
+                'inail' => $preview['inail'] ?? [],
+                'fattura_tra_privati' => $preview['fattura_tra_privati'] ?? [],
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('tax_calculations', ['customer_id' => $this->customer->id, 'tax_year' => 2025]);
+        $this->assertDatabaseHas('tax_adjustment_requests', [
+            'customer_id' => $this->customer->id,
+            'tax_year' => 2025,
+            'status' => 'pending',
+            'requested_by' => $staff->id,
+        ]);
+    }
+
+    public function test_locking_the_year_blocks_recalculation_and_unlocking_restores_it(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->callAction('lockYear')
+            ->assertOk();
+
+        $this->assertDatabaseHas('tax_year_locks', ['customer_id' => $this->customer->id, 'tax_year' => 2025]);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->callAction('recalculate')
+            ->assertOk();
+
+        $this->assertDatabaseMissing('tax_calculations', ['customer_id' => $this->customer->id, 'tax_year' => 2025]);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->callAction('unlockYear')
+            ->assertOk();
+
+        $this->assertDatabaseMissing('tax_year_locks', ['customer_id' => $this->customer->id, 'tax_year' => 2025]);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->callAction('recalculate')
+            ->assertOk();
+
+        $this->assertDatabaseHas('tax_calculations', ['customer_id' => $this->customer->id, 'tax_year' => 2025]);
+    }
+
     public function test_receipt_download_is_private_and_requires_a_signed_staff_request(): void
     {
         Storage::fake('local');

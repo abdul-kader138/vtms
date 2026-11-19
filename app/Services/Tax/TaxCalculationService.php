@@ -24,6 +24,20 @@ class TaxCalculationService
      */
     public function calculateForYear(Customer $customer, int $year): TaxCalculation
     {
+        return TaxCalculation::updateOrCreate(
+            ['customer_id' => $customer->id, 'tax_year' => $year],
+            $this->compute($customer, $year)
+        );
+    }
+
+    /**
+     * Pure math, no persistence — same value shape calculateForYear() stores.
+     * Lets a caller preview the figures before committing them.
+     *
+     * @return array<string, mixed>
+     */
+    public function compute(Customer $customer, int $year): array
+    {
         $law = TaxRules::isLaw();
 
         // Law: cash basis — what was collected in the year. Legacy: what was
@@ -57,21 +71,18 @@ class TaxCalculationService
         $balancePayment = max(0, round($taxDue - $advancePaymentsMade, 2));
         $nextYearAdvanceBase = round($taxDue * ($law ? 1.00 : 0.80), 2);
 
-        return TaxCalculation::updateOrCreate(
-            ['customer_id' => $customer->id, 'tax_year' => $year],
-            [
-                'total_sales' => $totalSales,
-                'gross_income' => $grossIncome,
-                'inps_deducted' => $inpsDeducted,
-                'taxable_income' => $taxableIncome,
-                'coefficient_used' => $coefficient,
-                'tax_rate_used' => $taxRate,
-                'tax_due' => $taxDue,
-                'advance_payments_made' => $advancePaymentsMade,
-                'balance_payment' => $balancePayment,
-                'next_year_advance_base' => $nextYearAdvanceBase,
-                'rules' => $law ? TaxRules::LAW : TaxRules::LEGACY,
-            ]
-        );
+        return [
+            'total_sales' => $totalSales,
+            'gross_income' => $grossIncome,
+            'inps_deducted' => $inpsDeducted,
+            'taxable_income' => $taxableIncome,
+            'coefficient_used' => $coefficient,
+            'tax_rate_used' => $taxRate,
+            'tax_due' => $taxDue,
+            'advance_payments_made' => $advancePaymentsMade,
+            'balance_payment' => $balancePayment,
+            'next_year_advance_base' => $nextYearAdvanceBase,
+            'rules' => $law ? TaxRules::LAW : TaxRules::LEGACY,
+        ];
     }
 }

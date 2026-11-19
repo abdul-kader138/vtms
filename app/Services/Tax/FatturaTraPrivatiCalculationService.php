@@ -42,6 +42,27 @@ class FatturaTraPrivatiCalculationService
 
     public function calculateForYear(Customer $customer, int $year): ?FatturaTraPrivatiCalculation
     {
+        $values = $this->compute($customer, $year);
+
+        if ($values === null) {
+            return null;
+        }
+
+        return FatturaTraPrivatiCalculation::updateOrCreate(
+            ['customer_id' => $customer->id, 'tax_year' => $year],
+            $values
+        );
+    }
+
+    /**
+     * Pure math, no persistence — same value shape calculateForYear() stores,
+     * or null when there are no qualifying invoices for the year. Lets a
+     * caller preview the figures before committing them.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function compute(Customer $customer, int $year): ?array
+    {
         $threshold = (float) Setting::get('stamp_duty_threshold', 77.47);
         $fee = (float) Setting::get('stamp_duty_fee', 2.00);
 
@@ -61,15 +82,12 @@ class FatturaTraPrivatiCalculationService
             ? (float) self::qualifying($customer->id, $year, $threshold)->get(['sales_amount'])->sum(fn ($r) => abs((float) $r->sales_amount))
             : $totalSalesAmount;
 
-        return FatturaTraPrivatiCalculation::updateOrCreate(
-            ['customer_id' => $customer->id, 'tax_year' => $year],
-            [
-                'total_invoices' => $totalInvoices,
-                'total_sales_amount' => $totalSalesAmount,
-                'payment_per_invoice' => $fee,
-                'total_payment_amount' => $totalPaymentAmount,
-                'minimum_invoice_amount' => $threshold,
-            ]
-        );
+        return [
+            'total_invoices' => $totalInvoices,
+            'total_sales_amount' => $totalSalesAmount,
+            'payment_per_invoice' => $fee,
+            'total_payment_amount' => $totalPaymentAmount,
+            'minimum_invoice_amount' => $threshold,
+        ];
     }
 }

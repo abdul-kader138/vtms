@@ -17,6 +17,28 @@ class InailCalculationService
      */
     public function calculateForYear(Customer $customer, int $year, TaxCalculation $taxCalculation): ?InailCalculation
     {
+        $values = $this->compute($customer, $year, $taxCalculation);
+
+        if ($values === null) {
+            return null;
+        }
+
+        return InailCalculation::updateOrCreate(
+            ['customer_id' => $customer->id, 'tax_year' => $year],
+            $values
+        );
+    }
+
+    /**
+     * Pure math, no persistence — same value shape calculateForYear() stores,
+     * or null when this customer has no INAIL calculation (not Artigiani, or
+     * rate/minimum not configured). Lets a caller preview the figures before
+     * committing them.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function compute(Customer $customer, int $year, TaxCalculation $taxCalculation): ?array
+    {
         if ($customer->customer_type !== CustomerType::Artigiani) {
             return null;
         }
@@ -32,16 +54,13 @@ class InailCalculationService
         $calculated = round($taxableIncome * $rate / 100, 2);
         $final = max($calculated, $minimum);
 
-        return InailCalculation::updateOrCreate(
-            ['customer_id' => $customer->id, 'tax_year' => $year],
-            [
-                'taxable_income' => $taxableIncome,
-                'inail_rate' => $rate,
-                'inail_calculated_amount' => $calculated,
-                'inail_minimum_payment' => $minimum,
-                'inail_final_amount' => $final,
-                'ateco_code' => $customer->inail_ateco_code,
-            ]
-        );
+        return [
+            'taxable_income' => $taxableIncome,
+            'inail_rate' => $rate,
+            'inail_calculated_amount' => $calculated,
+            'inail_minimum_payment' => $minimum,
+            'inail_final_amount' => $final,
+            'ateco_code' => $customer->inail_ateco_code,
+        ];
     }
 }

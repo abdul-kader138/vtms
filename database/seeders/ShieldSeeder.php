@@ -36,6 +36,12 @@ class ShieldSeeder extends Seeder
         Role::firstOrCreate(['name' => 'operator',    'guard_name' => 'web']);
         Role::firstOrCreate(['name' => 'panel_user',  'guard_name' => 'web']);
 
+        // Not a Shield resource/page permission (shield:generate above never
+        // creates it) — it gates committing a manually-adjusted tax
+        // calculation and locking/unlocking a tax year, both in
+        // CustomerTaxDashboard. Must exist before syncPermissions() below.
+        Permission::firstOrCreate(['name' => 'finalize_tax_calculation', 'guard_name' => 'web']);
+
         // filament-shield's config ships with super_admin.define_via_gate = false,
         // meaning there is NO automatic Gate::before bypass for this role — it
         // only gets full access because every permission is explicitly synced to
