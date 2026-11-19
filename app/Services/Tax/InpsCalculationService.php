@@ -41,6 +41,22 @@ class InpsCalculationService
     }
 
     /**
+     * Re-runs compute() for a hypothetical taxable income, holding the
+     * customer/year/rules fixed — what the official rate/slab table says
+     * INPS should be for that income, regardless of what anyone actually
+     * typed into the review form. Used to check a submitted inps_amount
+     * genuinely agrees with a (possibly separately edited) taxable_income:
+     * see CustomerTaxDashboard's live warning and
+     * TaxCalculationOrchestrator::commit()'s slab-mismatch guard.
+     *
+     * @return array<string, mixed>
+     */
+    public function expectedForIncome(Customer $customer, int $year, float $taxableIncome): array
+    {
+        return $this->compute($customer, $year, new TaxCalculation(['taxable_income' => $taxableIncome]));
+    }
+
+    /**
      * Legacy slab path (flat income-bracket table) and Gestione Separata
      * (always, regardless of "law"/"legacy" mode — GS has no minimale
      * concept). Pure: reads the DB for slabs/settings but never writes.

@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\IncomeData;
 use App\Models\TaxPayment;
 use App\Models\User;
+use App\Services\Tax\InpsCalculationService;
 use App\Services\Tax\PaymentScheduleService;
 use App\Services\Tax\TaxCalculationOrchestrator;
 use Database\Seeders\InpsRateSlabSeeder;
@@ -123,6 +124,57 @@ class CustomerTaxDashboardTest extends TestCase
             ->set('mountedActionsData.0.schedule.inps.1.amount', 0)
             ->assertSet('mountedActionsData.0.schedule.inps.2.amount', round($installment2 / $othersTotal * $groupTotal, 2))
             ->assertSet('mountedActionsData.0.schedule.inps.3.amount', round($installment3 / $othersTotal * $groupTotal, 2));
+    }
+
+    public function test_changing_taxable_income_resyncs_the_inps_figures_to_the_new_slab(): void
+    {
+        $this->actingAs($this->admin);
+
+        $newIncome = 5000.00;
+        $expected = app(InpsCalculationService::class)->expectedForIncome($this->customer, 2025, $newIncome);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.tax.taxable_income', $newIncome)
+            ->assertSet('mountedActionsData.0.inps.inps_amount', $expected['inps_amount'])
+            ->assertSet('mountedActionsData.0.inps.inps_amount_after_discount', $expected['inps_amount_after_discount']);
+    }
+
+    public function test_hand_editing_inps_amount_after_a_taxable_income_change_shows_a_mismatch_warning_and_blocks_saving(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.tax.taxable_income', 5000.00)
+            ->set('mountedActionsData.0.inps.inps_amount', 999999.00)
+            ->assertSeeHtml('implies an INPS amount')
+            ->set('mountedActionsData.0.tax.adjustment_reason', 'Income corrected.')
+            ->set('mountedActionsData.0.inps.adjustment_reason', 'Testing mismatch.')
+            ->callMountedAction()
+            ->assertOk();
+
+        $this->assertDatabaseMissing('inps_calculations', ['customer_id' => $this->customer->id, 'tax_year' => 2025, 'inps_amount' => 999999.00]);
+    }
+
+    public function test_confirming_the_slab_mismatch_allows_it_to_be_saved(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.tax.taxable_income', 5000.00)
+            ->set('mountedActionsData.0.inps.inps_amount', 999999.00)
+            ->set('mountedActionsData.0.tax.adjustment_reason', 'Income corrected.')
+            ->set('mountedActionsData.0.inps.adjustment_reason', 'Testing mismatch.')
+            ->set('mountedActionsData.0.confirm_slab_mismatch', true)
+            ->callMountedAction()
+            ->assertOk();
+
+        $this->assertDatabaseHas('inps_calculations', ['customer_id' => $this->customer->id, 'tax_year' => 2025, 'inps_amount' => 999999.00]);
     }
 
     public function test_submitting_an_edited_installment_persists_it_and_requires_a_reason(): void

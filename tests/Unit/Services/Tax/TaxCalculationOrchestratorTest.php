@@ -327,4 +327,52 @@ class TaxCalculationOrchestratorTest extends TestCase
             'schedule' => ['inps' => ['1' => ['amount' => 100.00]]],
         ]);
     }
+
+    public function test_commit_refuses_an_inps_amount_that_does_not_match_the_slab_for_the_submitted_taxable_income(): void
+    {
+        $this->seed(ShieldSeeder::class);
+        $user = User::factory()->create();
+        $user->givePermissionTo('finalize_tax_calculation');
+        $this->actingAs($user);
+
+        $customer = Customer::create([
+            'name' => 'Slab Mismatch', 'customer_type' => 'gestione_separata',
+            'coefficient_of_profitability' => 78.00, 'tax_rate' => 5.00,
+        ]);
+        IncomeData::create([
+            'customer_id' => $customer->id, 'source' => 'sdi_fattura', 'transaction_date' => '2025-03-01',
+            'sales_amount' => 10000.00, 'taxable_sales' => 10000.00, 'sale_taxes' => 0, 'tax_year' => 2025,
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+
+        app(TaxCalculationOrchestrator::class)->commit($customer, 2025, [
+            'tax' => ['adjustment_reason' => 'n/a'],
+            'inps' => ['inps_amount' => 999999.00, 'adjustment_reason' => 'Testing mismatch.'],
+        ]);
+    }
+
+    public function test_commit_accepts_a_slab_mismatch_once_confirmed(): void
+    {
+        $this->seed(ShieldSeeder::class);
+        $user = User::factory()->create();
+        $user->givePermissionTo('finalize_tax_calculation');
+        $this->actingAs($user);
+
+        $customer = Customer::create([
+            'name' => 'Slab Mismatch Confirmed', 'customer_type' => 'gestione_separata',
+            'coefficient_of_profitability' => 78.00, 'tax_rate' => 5.00,
+        ]);
+        IncomeData::create([
+            'customer_id' => $customer->id, 'source' => 'sdi_fattura', 'transaction_date' => '2025-03-01',
+            'sales_amount' => 10000.00, 'taxable_sales' => 10000.00, 'sale_taxes' => 0, 'tax_year' => 2025,
+        ]);
+
+        $result = app(TaxCalculationOrchestrator::class)->commit($customer, 2025, [
+            'inps' => ['inps_amount' => 999999.00, 'adjustment_reason' => 'Testing mismatch.'],
+            'confirm_slab_mismatch' => true,
+        ]);
+
+        $this->assertEqualsWithDelta(999999.00, (float) $result['inps']->inps_amount, 0.001);
+    }
 }

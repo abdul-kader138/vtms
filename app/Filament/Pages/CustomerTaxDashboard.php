@@ -16,6 +16,7 @@ use App\Models\TaxYearLock;
 use App\Services\Tax\Import\IncomeDataImportService;
 use App\Services\Tax\IncomeClosingService;
 use App\Services\Tax\IncomePredictionService;
+use App\Services\Tax\InpsCalculationService;
 use App\Services\Tax\PaymentCalendarService;
 use App\Services\Tax\PaymentRegistry;
 use App\Services\Tax\PaymentScheduleService;
@@ -29,6 +30,7 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -165,6 +167,79 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
 
         $set('inps.discount_amount', $discountAmount);
         $set('inps.inps_amount_after_discount', round($base - $discountAmount, 2));
+    }
+
+    /**
+     * tax.taxable_income changed — INPS (rate/slab-based, or the
+     * fixed+variable split for Artigiani/Commercianti under law rules) is
+     * computed FROM taxable income, so a reddito edit that didn't also
+     * touch INPS would otherwise leave it silently stale. Fully re-syncs
+     * every INPS field to what the official table gives for the new
+     * income, discarding any previous manual INPS edit — the two figures
+     * must agree, see slabMismatch().
+     */
+    private function resyncInpsForTaxableIncome(Set $set, Get $get): void
+    {
+        $taxableIncome = (float) $get('tax.taxable_income');
+        $expected = app(InpsCalculationService::class)->expectedForIncome($this->customerRecord, $this->selectedYear, $taxableIncome);
+
+        $set('inps.inps_rate', $expected['inps_rate']);
+        $set('inps.inps_amount', $expected['inps_amount']);
+        $set('inps.discount_percentage', $expected['discount_percentage']);
+        $set('inps.discount_amount', $expected['discount_amount']);
+        $set('inps.inps_amount_after_discount', $expected['inps_amount_after_discount']);
+
+        // Only these two feed the schedule preview's fixed/variable split
+        // (see scheduleGroupSection()/PaymentScheduleService::previewForYear())
+        // — everything else in $this->reviewBaseline stays as it was at fillForm time.
+        $this->reviewBaseline['inps']['fixed_amount'] = $expected['fixed_amount'] ?? null;
+        $this->reviewBaseline['inps']['calculation_method'] = $expected['calculation_method'] ?? null;
+    }
+
+    /**
+     * Whether the currently entered inps.inps_amount agrees with what the
+     * official rate/slab table gives for the currently entered
+     * tax.taxable_income — normally they always do, since
+     * resyncInpsForTaxableIncome() keeps them in lockstep, UNLESS
+     * inps.inps_amount was then edited by hand afterward. Returns null
+     * when they match (nothing to warn about).
+     *
+     * @return ?array{expected_amount: float, expected_rate: float, submitted_amount: float}
+     */
+    private function slabMismatch(Get $get): ?array
+    {
+        $taxableIncome = $get('tax.taxable_income');
+        $submittedAmount = $get('inps.inps_amount');
+
+        if (! is_numeric($taxableIncome) || ! is_numeric($submittedAmount)) {
+            return null;
+        }
+
+        $expected = app(InpsCalculationService::class)->expectedForIncome($this->customerRecord, $this->selectedYear, (float) $taxableIncome);
+
+        if (round((float) $expected['inps_amount'], 2) === round((float) $submittedAmount, 2)) {
+            return null;
+        }
+
+        return [
+            'expected_amount' => (float) $expected['inps_amount'],
+            'expected_rate' => (float) $expected['inps_rate'],
+            'submitted_amount' => (float) $submittedAmount,
+        ];
+    }
+
+    private function slabMismatchWarning(Get $get): HtmlString
+    {
+        $mismatch = $this->slabMismatch($get);
+
+        return new HtmlString('<div class="vt-alert vt-alert--warning">'.e(__(
+            'This taxable income implies an INPS amount of € :expected (:rate%), but you entered € :submitted. Check the box below to save it anyway.',
+            [
+                'expected' => number_format($mismatch['expected_amount'], 2, ',', '.'),
+                'rate' => number_format($mismatch['expected_rate'], 2),
+                'submitted' => number_format($mismatch['submitted_amount'], 2, ',', '.'),
+            ]
+        )).'</div>');
     }
 
     /**
@@ -483,6 +558,7 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                 Section::make(__('Income tax (Regime Forfettario)'))
                     ->schema([
                         TextInput::make('tax.taxable_income')->label(__('Taxable income'))->numeric()->prefix('€')->required()->live()
+                            ->afterStateUpdated(fn (Set $set, Get $get) => $this->resyncInpsForTaxableIncome($set, $get))
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'taxable_income')),
                         TextInput::make('tax.tax_due')->label(__('Tax due'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'tax_due')),
@@ -512,6 +588,16 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                             ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'discount_amount')),
                         TextInput::make('inps.inps_amount_after_discount')->label(__('Amount after discount'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'inps_amount_after_discount')),
+                        Placeholder::make('slab_mismatch_warning')
+                            ->hiddenLabel()
+                            ->visible(fn (Get $get) => $this->slabMismatch($get) !== null)
+                            ->content(fn (Get $get) => $this->slabMismatchWarning($get))
+                            ->columnSpanFull(),
+                        Checkbox::make('confirm_slab_mismatch')
+                            ->label(__('I understand this doesn\'t match the official INPS table — save it anyway'))
+                            ->visible(fn (Get $get) => $this->slabMismatch($get) !== null)
+                            ->rules(fn (Get $get) => $this->slabMismatch($get) !== null ? ['accepted'] : [])
+                            ->columnSpanFull(),
                         Textarea::make('inps.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
                             ->helperText(__('Required only if a figure above was changed from its computed value.')),
                     ])

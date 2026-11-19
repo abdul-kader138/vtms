@@ -121,6 +121,7 @@ class TaxCalculationOrchestrator
             $this->paymentScheduleService->scheduleTaxPayments($taxCalculation, $customer, $scheduleOverrides['tax'] ?? []);
 
             $inpsComputed = $this->inpsCalculationService->compute($customer, $year, $taxCalculation);
+            $this->guardSlabMismatch($overrides, $inpsComputed);
             $inpsScheduleBaseline = $this->paymentScheduleService->previewForYear($customer, $year, [
                 'inps' => array_merge($inpsComputed, $overrides['inps'] ?? []),
             ])['inps'];
@@ -181,6 +182,41 @@ class TaxCalculationOrchestrator
                 'variance_warnings' => $this->varianceWarnings,
             ];
         });
+    }
+
+    /**
+     * Extra, explicit confirmation gate on top of the normal
+     * adjustment_reason/finalize_tax_calculation checks adjusted() already
+     * does for any INPS override: an inps_amount that doesn't match what
+     * the official rate/slab table gives for the taxable income about to
+     * be saved is usually a slip — taxable_income was edited and INPS
+     * wasn't (or vice versa) — so it's refused unless
+     * $overrides['confirm_slab_mismatch'] is truthy, forcing the review
+     * modal's warning to be explicitly acknowledged rather than clicked
+     * past along with everything else.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @param  array<string, mixed>  $inpsComputed  Freshly computed INPS figures — already reflects any tax.taxable_income override, since compute() reads it off the just-persisted TaxCalculation.
+     */
+    private function guardSlabMismatch(array $overrides, array $inpsComputed): void
+    {
+        if (! isset($overrides['inps']['inps_amount']) || ! is_numeric($overrides['inps']['inps_amount'])) {
+            return;
+        }
+
+        $submitted = (float) $overrides['inps']['inps_amount'];
+        $expected = (float) $inpsComputed['inps_amount'];
+
+        if (round($submitted, 2) === round($expected, 2)) {
+            return;
+        }
+
+        if (blank($overrides['confirm_slab_mismatch'] ?? null)) {
+            throw new \RuntimeException(__(
+                'INPS: € :submitted doesn\'t match € :expected — what the official rate/slab table gives for this taxable income. Confirm you want to save it anyway.',
+                ['submitted' => number_format($submitted, 2, ',', '.'), 'expected' => number_format($expected, 2, ',', '.')]
+            ));
+        }
     }
 
     /**
