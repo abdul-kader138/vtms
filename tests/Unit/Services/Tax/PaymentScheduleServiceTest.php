@@ -102,4 +102,78 @@ class PaymentScheduleServiceTest extends TestCase
 
         $this->assertCount(4, $customer->inpsPayments()->get());
     }
+
+    public function test_preview_for_year_writes_nothing_and_matches_the_real_artigiani_schedule(): void
+    {
+        $customer = Customer::create(['name' => 'Artigiano Preview', 'customer_type' => 'artigiani']);
+
+        $rows = $this->service->previewForYear($customer, 2025, [
+            'tax' => ['tax_due' => 0, 'balance_payment' => 0],
+            'inps' => ['inps_amount_after_discount' => 1583.35, 'discount_percentage' => 0, 'calculation_method' => 'percentage'],
+        ]);
+
+        $inpsRows = collect($rows)->filter(fn ($r) => str_starts_with($r['label'], 'INPS'))->values();
+
+        $this->assertCount(4, $inpsRows);
+        $this->assertEqualsWithDelta(395.84, $inpsRows[0]['amount'], 0.001);
+        $this->assertEqualsWithDelta(395.83, $inpsRows[3]['amount'], 0.001);
+        $this->assertSame('2025-05-16', $inpsRows[0]['due_date']->toDateString());
+
+        $this->assertDatabaseCount('inps_payments', 0);
+        $this->assertDatabaseCount('inps_calculations', 0);
+    }
+
+    public function test_preview_for_year_matches_the_real_gestione_separata_schedule(): void
+    {
+        $customer = Customer::create(['name' => 'GS Preview', 'customer_type' => 'gestione_separata']);
+
+        $rows = $this->service->previewForYear($customer, 2025, [
+            'tax' => ['tax_due' => 0, 'balance_payment' => 0],
+            'inps' => ['inps_amount_after_discount' => 1000.00, 'discount_percentage' => 0, 'calculation_method' => 'percentage'],
+        ]);
+
+        $inpsRows = collect($rows)->filter(fn ($r) => str_starts_with($r['label'], 'INPS'))->values();
+
+        $this->assertCount(3, $inpsRows);
+        $this->assertEqualsWithDelta(1000.00, $inpsRows[0]['amount'], 0.001);
+        $this->assertEqualsWithDelta(400.00, $inpsRows[1]['amount'], 0.001);
+        $this->assertEqualsWithDelta(400.00, $inpsRows[2]['amount'], 0.001);
+        $this->assertSame('2026-06-30', $inpsRows[0]['due_date']->toDateString());
+        $this->assertSame('2026-11-30', $inpsRows[2]['due_date']->toDateString());
+    }
+
+    public function test_preview_for_year_includes_tax_inail_and_fattura_rows_and_totals_them(): void
+    {
+        $customer = Customer::create(['name' => 'Full Preview', 'customer_type' => 'gestione_separata', 'business_start_date' => '2020-01-01']);
+
+        $rows = $this->service->previewForYear($customer, 2025, [
+            'tax' => ['tax_due' => 1000.00, 'balance_payment' => 200.00],
+            'inps' => ['inps_amount_after_discount' => 100.00, 'discount_percentage' => 0, 'calculation_method' => 'percentage'],
+            'inail' => ['inail_final_amount' => 210.00],
+            'fattura_tra_privati' => ['total_payment_amount' => 10.00],
+        ]);
+
+        $this->assertTrue(collect($rows)->contains(fn ($r) => $r['label'] === 'Tax — balance' && $r['amount'] === 200.00));
+        $this->assertTrue(collect($rows)->contains(fn ($r) => $r['label'] === 'INAIL' && $r['amount'] === 210.00));
+        $this->assertTrue(collect($rows)->contains(fn ($r) => $r['amount'] === 10.00 && $r['due_date'] === null));
+
+        // Tax: balance 200 + two 40% advances of the 1000 tax_due (400 each).
+        // INPS (Gestione Separata, 100 after discount): balance 100 + two 40% advances (40 each).
+        $this->assertEqualsWithDelta(200.00 + 400.00 + 400.00 + 100.00 + 40.00 + 40.00 + 210.00 + 10.00, collect($rows)->sum('amount'), 0.001);
+    }
+
+    public function test_preview_for_year_omits_a_calculator_the_form_left_blank(): void
+    {
+        $customer = Customer::create(['name' => 'Omit Preview', 'customer_type' => 'gestione_separata']);
+
+        $rows = $this->service->previewForYear($customer, 2025, [
+            'tax' => ['tax_due' => 0, 'balance_payment' => 0],
+            'inps' => ['inps_amount_after_discount' => 100.00, 'discount_percentage' => 0, 'calculation_method' => 'percentage'],
+            'inail' => ['inail_final_amount' => null],
+            'fattura_tra_privati' => ['total_payment_amount' => null],
+        ]);
+
+        $this->assertFalse(collect($rows)->contains(fn ($r) => $r['label'] === 'INAIL'));
+        $this->assertFalse(collect($rows)->contains(fn ($r) => str_contains($r['label'], 'Imposta di bollo')));
+    }
 }

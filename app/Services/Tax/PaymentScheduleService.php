@@ -314,6 +314,139 @@ class PaymentScheduleService
     }
 
     /**
+     * Read-only projection of what commit() would schedule for this year,
+     * built from the (possibly staff-overridden) figures shown in
+     * CustomerTaxDashboard's review modal — nothing here is read from or
+     * written to a *_payments table; it mirrors the real date/amount math
+     * above well enough for a provisional "does this look right" check
+     * before saving, not as a byte-for-byte replacement for it.
+     *
+     * $values is keyed like TaxCalculationOrchestrator::preview()'s result
+     * (tax/inps/inail/fattura_tra_privati); inps additionally needs
+     * fixed_amount/calculation_method from that same preview call, since
+     * the review form has no input for them (see CustomerTaxDashboard's
+     * $reviewBaseline).
+     *
+     * @param  array<string, array<string, mixed>>  $values
+     * @return list<array{label: string, due_date: ?CarbonInterface, amount: float}>
+     */
+    public function previewForYear(Customer $customer, int $year, array $values): array
+    {
+        $rows = [];
+
+        if (($values['tax']['tax_due'] ?? null) !== null) {
+            $rows = array_merge($rows, $this->previewTaxPayments($values['tax'], $year, $customer));
+        }
+
+        if (($values['inps']['inps_amount_after_discount'] ?? null) !== null) {
+            $rows = array_merge($rows, $this->previewInpsPayments($values['inps'], $year, $customer));
+        }
+
+        if (($values['inail']['inail_final_amount'] ?? null) !== null) {
+            $rows[] = ['label' => __('INAIL'), 'due_date' => $this->deadline($year + 1, 2, 16), 'amount' => (float) $values['inail']['inail_final_amount']];
+        }
+
+        if (($values['fattura_tra_privati']['total_payment_amount'] ?? null) !== null) {
+            $rows[] = ['label' => __('Imposta di bollo (fattura tra privati) — split per quarter after saving'), 'due_date' => null, 'amount' => (float) $values['fattura_tra_privati']['total_payment_amount']];
+        }
+
+        usort($rows, fn ($a, $b) => ($a['due_date']?->timestamp ?? PHP_INT_MAX) <=> ($b['due_date']?->timestamp ?? PHP_INT_MAX));
+
+        return $rows;
+    }
+
+    /** @param  array<string, mixed>  $tax */
+    private function previewTaxPayments(array $tax, int $year, Customer $customer): array
+    {
+        $next = $year + 1;
+        $taxDue = (float) ($tax['tax_due'] ?? 0);
+        $rows = [];
+
+        if (TaxRules::isLaw()) {
+            $balanceDue = $this->deadline($next, 6, 30);
+            $advances = match (true) {
+                $taxDue <= TaxRules::ADVANCE_MINIMUM => [],
+                $taxDue < TaxRules::ADVANCE_SINGLE_PAYMENT_LIMIT => [
+                    __('Tax — 2nd advance') => [round($taxDue, 2), $this->deadline($next, 11, 30)],
+                ],
+                default => [
+                    __('Tax — 1st advance') => [round($taxDue * 0.40, 2), $this->deadline($next, 6, 30)],
+                    __('Tax — 2nd advance') => [round($taxDue - round($taxDue * 0.40, 2), 2), $this->deadline($next, 11, 30)],
+                ],
+            };
+            $scheduleBalance = (float) ($tax['balance_payment'] ?? 0) > 0;
+        } else {
+            $balanceDue = Carbon::create($next, 2, 16);
+            $each = round($taxDue * 0.40, 2);
+            $advances = $each > 0 ? [
+                __('Tax — 1st advance') => [$each, Carbon::create($next, 6, 30)],
+                __('Tax — 2nd advance') => [$each, Carbon::create($next, 11, 30)],
+            ] : [];
+            $scheduleBalance = $customer->business_start_date?->year !== $year;
+        }
+
+        if ($scheduleBalance) {
+            $rows[] = ['label' => __('Tax — balance'), 'due_date' => $balanceDue, 'amount' => (float) ($tax['balance_payment'] ?? 0)];
+        }
+
+        foreach ($advances as $label => [$amount, $due]) {
+            $rows[] = ['label' => $label, 'due_date' => $due, 'amount' => $amount];
+        }
+
+        return $rows;
+    }
+
+    /** @param  array<string, mixed>  $inps */
+    private function previewInpsPayments(array $inps, int $year, Customer $customer): array
+    {
+        $amount = (float) $inps['inps_amount_after_discount'];
+        $date = fn (int $y, int $m, int $d) => $this->deadline($y, $m, $d);
+        $method = $inps['calculation_method'] ?? null;
+        $isFixedPlusPercentage = $method === InpsCalculationMethod::FixedPlusPercentage || $method === InpsCalculationMethod::FixedPlusPercentage->value;
+
+        if ($isFixedPlusPercentage) {
+            $factor = 1 - (float) ($inps['discount_percentage'] ?? 0) / 100;
+            $fixed = round((float) ($inps['fixed_amount'] ?? 0) * $factor, 2);
+            $variable = round($amount - $fixed, 2);
+
+            $base = round($fixed / 4, 2);
+            $dueDates = [$date($year, 5, 16), $date($year, 8, 20), $date($year, 11, 16), $date($year + 1, 2, 16)];
+            $rows = [];
+            for ($i = 1; $i <= 4; $i++) {
+                $rows[] = ['label' => __('INPS — fixed installment :n', ['n' => $i]), 'due_date' => $dueDates[$i - 1], 'amount' => $i < 4 ? $base : round($fixed - 3 * $base, 2)];
+            }
+
+            if ($variable > 0) {
+                $rows[] = ['label' => __('INPS — balance on income above the minimale'), 'due_date' => $date($year + 1, 6, 30), 'amount' => $variable];
+            }
+
+            return $rows;
+        }
+
+        if ($customer->customer_type === CustomerType::GestioneSeparata) {
+            return [
+                ['label' => __('INPS — balance'), 'due_date' => $date($year + 1, 6, 30), 'amount' => $amount],
+                ['label' => __('INPS — 1st advance'), 'due_date' => $date($year + 1, 6, 30), 'amount' => round($amount * 0.40, 2)],
+                ['label' => __('INPS — 2nd advance'), 'due_date' => $date($year + 1, 11, 30), 'amount' => round($amount * 0.40, 2)],
+            ];
+        }
+
+        // Legacy Artigiani/Commercianti: 4 equal installments (see
+        // scheduleInpsPayments() for the exact remainder-on-last-installment rule).
+        $base = round($amount / 4, 2);
+        $dueDates = [$date($year, 5, 16), $date($year, 8, 20), $date($year, 11, 16), $date($year + 1, 2, 16)];
+        $rows = [];
+        $runningTotal = 0.0;
+        for ($i = 1; $i <= 4; $i++) {
+            $installmentAmount = $i < 4 ? $base : round($amount - $runningTotal, 2);
+            $runningTotal += $i < 4 ? $base : $installmentAmount;
+            $rows[] = ['label' => __('INPS — installment :n', ['n' => $i]), 'due_date' => $dueDates[$i - 1], 'amount' => $installmentAmount];
+        }
+
+        return $rows;
+    }
+
+    /**
      * updateOrCreate that never touches a payment someone already settled
      * (paid or cancelled): a recalculation — or switching rule sets — must
      * not rewrite the amount or due date of a recorded payment.

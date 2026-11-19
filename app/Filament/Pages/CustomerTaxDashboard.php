@@ -18,6 +18,7 @@ use App\Services\Tax\IncomeClosingService;
 use App\Services\Tax\IncomePredictionService;
 use App\Services\Tax\PaymentCalendarService;
 use App\Services\Tax\PaymentRegistry;
+use App\Services\Tax\PaymentScheduleService;
 use App\Services\Tax\RavvedimentoService;
 use App\Services\Tax\TaxCalculationOrchestrator;
 use App\Services\Tax\TaxOverviewService;
@@ -39,6 +40,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -70,6 +72,17 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
     public Customer $customerRecord;
 
     public int $selectedYear;
+
+    /**
+     * recalculateAction()'s preview() result at the moment the modal
+     * opened — the review form only exposes inps_amount_after_discount as
+     * an editable total, not the fixed/variable split, so the provisional
+     * payment-schedule preview reads fixed_amount/calculation_method from
+     * here (static for the life of the modal) instead of from $get().
+     *
+     * @var array<string, mixed>
+     */
+    public array $reviewBaseline = [];
 
     // Only $customer is a mount parameter: an optional second scalar parameter
     // with a default (for $year) makes Laravel's resolveMethodDependencies()
@@ -141,6 +154,17 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
         }
 
         return __('Previously: € :value', ['value' => number_format((float) $calculation->{$field}, 2, ',', '.')]);
+    }
+
+    /** inps.inps_amount or inps.discount_percentage changed — re-derive discount_amount and the net after it. */
+    private function recalculateInpsNet(Set $set, Get $get): void
+    {
+        $base = (float) $get('inps.inps_amount');
+        $percentage = (float) $get('inps.discount_percentage');
+        $discountAmount = round($base * $percentage / 100, 2);
+
+        $set('inps.discount_amount', $discountAmount);
+        $set('inps.inps_amount_after_discount', round($base - $discountAmount, 2));
     }
 
     public function getOverview(): array
@@ -325,17 +349,22 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             ->modalDescription(__('These are the freshly computed figures — adjust anything before saving. Paid payments are never rewritten. Changing a figure requires a reason, and saving it requires the finalize-tax-calculation permission.'))
             ->modalSubmitActionLabel(__('Save'))
             ->modalWidth('4xl')
-            ->fillForm(fn () => app(TaxCalculationOrchestrator::class)->preview($this->customerRecord, $this->selectedYear))
+            ->fillForm(function () {
+                $preview = app(TaxCalculationOrchestrator::class)->preview($this->customerRecord, $this->selectedYear);
+                $this->reviewBaseline = $preview;
+
+                return $preview;
+            })
             ->form([
                 Section::make(__('Income tax (Regime Forfettario)'))
                     ->schema([
-                        TextInput::make('tax.taxable_income')->label(__('Taxable income'))->numeric()->prefix('€')->required()
+                        TextInput::make('tax.taxable_income')->label(__('Taxable income'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'taxable_income')),
-                        TextInput::make('tax.tax_due')->label(__('Tax due'))->numeric()->prefix('€')->required()
+                        TextInput::make('tax.tax_due')->label(__('Tax due'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'tax_due')),
-                        TextInput::make('tax.advance_payments_made')->label(__('Advances already made'))->numeric()->prefix('€')->required()
+                        TextInput::make('tax.advance_payments_made')->label(__('Advances already made'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'advance_payments_made')),
-                        TextInput::make('tax.balance_payment')->label(__('Balance payment'))->numeric()->prefix('€')->required()
+                        TextInput::make('tax.balance_payment')->label(__('Balance payment'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'balance_payment')),
                         Textarea::make('tax.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
                             ->helperText(__('Required only if a figure above was changed from its computed value.')),
@@ -343,13 +372,21 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                     ->columns(2),
                 Section::make(__('INPS'))
                     ->schema([
-                        TextInput::make('inps.inps_amount')->label(__('INPS amount'))->numeric()->prefix('€')->required()
+                        TextInput::make('inps.inps_amount')->label(__('INPS amount'))->numeric()->prefix('€')->required()->live()
+                            ->afterStateUpdated(fn (Set $set, Get $get) => $this->recalculateInpsNet($set, $get))
                             ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'inps_amount')),
-                        TextInput::make('inps.discount_percentage')->label(__('Discount %'))->numeric()->suffix('%')->required()
+                        TextInput::make('inps.discount_percentage')->label(__('Discount %'))->numeric()->suffix('%')->required()->live()
+                            ->afterStateUpdated(fn (Set $set, Get $get) => $this->recalculateInpsNet($set, $get))
                             ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'discount_percentage')),
-                        TextInput::make('inps.discount_amount')->label(__('Discount amount'))->numeric()->prefix('€')->required()
+                        TextInput::make('inps.discount_amount')->label(__('Discount amount'))->numeric()->prefix('€')->required()->live()
+                            ->afterStateUpdated(function (Set $set, Get $get) {
+                                $base = (float) $get('inps.inps_amount');
+                                $discountAmount = (float) $get('inps.discount_amount');
+                                $set('inps.discount_percentage', $base > 0 ? round($discountAmount / $base * 100, 2) : 0);
+                                $set('inps.inps_amount_after_discount', round($base - $discountAmount, 2));
+                            })
                             ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'discount_amount')),
-                        TextInput::make('inps.inps_amount_after_discount')->label(__('Amount after discount'))->numeric()->prefix('€')->required()
+                        TextInput::make('inps.inps_amount_after_discount')->label(__('Amount after discount'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getInpsCalculation(), 'inps_amount_after_discount')),
                         Textarea::make('inps.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
                             ->helperText(__('Required only if a figure above was changed from its computed value.')),
@@ -358,9 +395,9 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                 Section::make(__('INAIL'))
                     ->visible(fn (Get $get) => $get('inail.inail_final_amount') !== null)
                     ->schema([
-                        TextInput::make('inail.inail_calculated_amount')->label(__('Calculated amount'))->numeric()->prefix('€')->required()
+                        TextInput::make('inail.inail_calculated_amount')->label(__('Calculated amount'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getInailCalculation(), 'inail_calculated_amount')),
-                        TextInput::make('inail.inail_final_amount')->label(__('Final amount (after minimum)'))->numeric()->prefix('€')->required()
+                        TextInput::make('inail.inail_final_amount')->label(__('Final amount (after minimum)'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getInailCalculation(), 'inail_final_amount')),
                         Textarea::make('inail.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
                             ->helperText(__('Required only if a figure above was changed from its computed value.')),
@@ -369,10 +406,27 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                 Section::make(__('Imposta di bollo (fattura tra privati)'))
                     ->visible(fn (Get $get) => $get('fattura_tra_privati.total_payment_amount') !== null)
                     ->schema([
-                        TextInput::make('fattura_tra_privati.total_payment_amount')->label(__('Total stamp duty'))->numeric()->prefix('€')->required()
+                        TextInput::make('fattura_tra_privati.total_payment_amount')->label(__('Total stamp duty'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getFatturaCalculation(), 'total_payment_amount')),
                         Textarea::make('fattura_tra_privati.adjustment_reason')->label(__('Reason for changes'))->rows(2)
                             ->helperText(__('Required only if the figure above was changed from its computed value.')),
+                    ]),
+                Section::make(__('Provisional payment schedule'))
+                    ->description(__('Recalculated live from the figures above — see what would be scheduled before you save.'))
+                    ->schema([
+                        Placeholder::make('schedule_preview')
+                            ->hiddenLabel()
+                            ->content(fn (Get $get) => new HtmlString(view('filament.pages.partials.schedule-preview', [
+                                'rows' => app(PaymentScheduleService::class)->previewForYear($this->customerRecord, $this->selectedYear, [
+                                    'tax' => $get('tax') ?? [],
+                                    'inps' => array_merge($get('inps') ?? [], [
+                                        'fixed_amount' => $this->reviewBaseline['inps']['fixed_amount'] ?? null,
+                                        'calculation_method' => $this->reviewBaseline['inps']['calculation_method'] ?? null,
+                                    ]),
+                                    'inail' => $get('inail') ?? [],
+                                    'fattura_tra_privati' => $get('fattura_tra_privati') ?? [],
+                                ]),
+                            ])->render())),
                     ]),
             ])
             ->action(function (array $data) {

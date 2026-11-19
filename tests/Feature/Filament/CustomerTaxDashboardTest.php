@@ -78,6 +78,32 @@ class CustomerTaxDashboardTest extends TestCase
         ]);
     }
 
+    public function test_recalculate_modal_auto_populates_the_inps_net_when_the_discount_percentage_changes(): void
+    {
+        $this->actingAs($this->admin);
+
+        $preview = app(TaxCalculationOrchestrator::class)->preview($this->customer, 2025);
+        $inpsAmount = (float) $preview['inps']['inps_amount'];
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.inps.discount_percentage', 10)
+            ->assertSet('mountedActionsData.0.inps.discount_amount', round($inpsAmount * 0.10, 2))
+            ->assertSet('mountedActionsData.0.inps.inps_amount_after_discount', round($inpsAmount - round($inpsAmount * 0.10, 2), 2));
+    }
+
+    public function test_recalculate_modal_shows_a_provisional_payment_schedule(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->assertSeeHtml('Provisional payment schedule')
+            ->assertSeeHtml('Tax — balance');
+    }
+
     public function test_mark_paid_action_is_reflected_immediately_without_reload(): void
     {
         $this->actingAs($this->admin);
