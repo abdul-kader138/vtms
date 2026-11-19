@@ -31,4 +31,7 @@ php artisan config:cache --no-interaction
 php artisan route:cache --no-interaction
 php artisan view:cache --no-interaction
 
+echo "==> Restarting queue worker so it picks up the new code"
+php artisan queue:restart
+
 echo "==> Deployment complete"
