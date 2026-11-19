@@ -16,6 +16,8 @@ use Filament\Notifications\DatabaseNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class TaxAdjustmentRequestResourceTest extends TestCase
@@ -146,6 +148,30 @@ class TaxAdjustmentRequestResourceTest extends TestCase
 
         Notification::assertSentTo($approver, DatabaseNotification::class);
         Notification::assertNotSentTo($nonApprover, DatabaseNotification::class);
+    }
+
+    public function test_a_pending_request_is_still_queued_when_the_finalize_permission_does_not_exist(): void
+    {
+        Notification::fake();
+        Permission::where('name', 'finalize_tax_calculation')->delete();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->createPendingRequest(User::factory()->create());
+
+        $this->assertDatabaseHas('tax_adjustment_requests', ['customer_id' => $this->customer->id, 'status' => TaxAdjustmentRequestStatus::Pending->value]);
+        Notification::assertNothingSent();
+    }
+
+    public function test_the_migration_restores_the_finalize_permission_to_super_admin_on_an_existing_install(): void
+    {
+        Permission::where('name', 'finalize_tax_calculation')->delete();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        (require database_path('migrations/2026_11_19_224218_add_finalize_tax_calculation_permission.php'))->up();
+
+        $admin = User::where('email', env('ADMIN_EMAIL', 'admin@admin.com'))->firstOrFail();
+        $this->assertTrue($admin->fresh()->can('finalize_tax_calculation'));
+        $this->assertFalse(User::factory()->create()->can('finalize_tax_calculation'));
     }
 
     public function test_approving_a_request_notifies_the_requester(): void

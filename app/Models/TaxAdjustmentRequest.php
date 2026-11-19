@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
+use Spatie\Permission\Exceptions\PermissionDoesNotExist;
 
 /**
  * A review-modal submission (CustomerTaxDashboard::recalculateAction())
@@ -72,7 +73,13 @@ class TaxAdjustmentRequest extends Model
 
     private function notifyApprovers(): void
     {
-        $approvers = User::permission('finalize_tax_calculation')->get();
+        try {
+            $approvers = User::permission('finalize_tax_calculation')->get();
+        } catch (PermissionDoesNotExist) {
+            // No such permission yet means nobody can approve — the request
+            // still gets queued rather than failing the whole submission.
+            return;
+        }
 
         if ($approvers->isEmpty()) {
             return;
