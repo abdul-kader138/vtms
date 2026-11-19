@@ -167,6 +167,127 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
         $set('inps.inps_amount_after_discount', round($base - $discountAmount, 2));
     }
 
+    /**
+     * PaymentScheduleService::previewForYear()'s result, with every
+     * due_date turned into a plain 'Y-m-d' string (or null) — kept on
+     * $this->reviewBaseline for the life of the modal, so it survives
+     * Livewire's request/response round-trips without having to serialize
+     * Carbon instances.
+     *
+     * @param  array<string, mixed>  $schedule
+     * @return array<string, mixed>
+     */
+    private function normalizeScheduleBaseline(array $schedule): array
+    {
+        $group = fn (array $rows) => collect($rows)->map(fn ($row) => [
+            'label' => $row['label'],
+            'due_date' => $row['due_date']?->toDateString(),
+            'amount' => $row['amount'],
+        ])->all();
+
+        return [
+            'tax' => $group($schedule['tax'] ?? []),
+            'inps' => $group($schedule['inps'] ?? []),
+            'inail' => $schedule['inail'] !== null
+                ? ['label' => $schedule['inail']['label'], 'due_date' => $schedule['inail']['due_date']?->toDateString(), 'amount' => $schedule['inail']['amount']]
+                : null,
+            'fattura_tra_privati' => $group($schedule['fattura_tra_privati'] ?? []),
+        ];
+    }
+
+    /** $this->reviewBaseline['schedule'], reshaped into the form's initial 'schedule.*' values. */
+    private function scheduleFormDefaults(): array
+    {
+        $baseline = $this->reviewBaseline['schedule'];
+        $group = fn (array $rows) => collect($rows)->map(fn ($row) => ['amount' => $row['amount'], 'due_date' => $row['due_date']])->all();
+
+        return [
+            'tax' => $group($baseline['tax']),
+            'inps' => $group($baseline['inps']),
+            'inail' => $baseline['inail'] !== null ? ['amount' => $baseline['inail']['amount'], 'due_date' => $baseline['inail']['due_date']] : null,
+            'fattura_tra_privati' => $group($baseline['fattura_tra_privati']),
+        ];
+    }
+
+    /**
+     * One editable amount+due_date pair per row key this group's baseline
+     * actually has (see normalizeScheduleBaseline()) — a key with no
+     * baseline row (e.g. '2nd advance' when tax due is too low to need
+     * one) never renders, so the set of visible rows only changes when the
+     * modal is reopened, not while typing.
+     *
+     * @param  list<string>  $possibleKeys  Every row key this group could ever use across all customer types/rule sets.
+     */
+    private function scheduleGroupSection(string $group, string $label, array $possibleKeys): Section
+    {
+        return Section::make($label)
+            ->visible(fn () => ($this->reviewBaseline['schedule'][$group] ?? []) !== [])
+            ->schema(collect($possibleKeys)->flatMap(fn (string $key) => [
+                TextInput::make("schedule.{$group}.{$key}.amount")
+                    ->label(fn () => $this->reviewBaseline['schedule'][$group][$key]['label'] ?? $key)
+                    ->numeric()->prefix('€')->live()
+                    ->visible(fn () => array_key_exists($key, $this->reviewBaseline['schedule'][$group] ?? []))
+                    ->afterStateUpdated(fn (Set $set, Get $get) => $this->rebalanceScheduleGroup($set, $get, $group, $key)),
+                DatePicker::make("schedule.{$group}.{$key}.due_date")
+                    ->label(__('Due date'))->native(false)->displayFormat('d/m/Y')
+                    ->visible(fn () => array_key_exists($key, $this->reviewBaseline['schedule'][$group] ?? [])),
+            ])->all())
+            ->columns(2);
+    }
+
+    /**
+     * Keeps a schedule group's total fixed at its baseline sum: when
+     * $changedKey's amount is edited, every other row in the same group is
+     * rescaled proportionally to its own current (pre-edit) share of
+     * whatever's left, with any rounding remainder absorbed by the last
+     * row so the group still sums exactly.
+     */
+    private function rebalanceScheduleGroup(Set $set, Get $get, string $group, string $changedKey): void
+    {
+        $baseline = $this->reviewBaseline['schedule'][$group] ?? [];
+        $others = array_values(array_diff(array_keys($baseline), [$changedKey]));
+
+        if ($others === []) {
+            return;
+        }
+
+        $groupTotal = collect($baseline)->sum('amount');
+        $changedAmount = (float) ($get("schedule.{$group}.{$changedKey}.amount") ?? 0);
+        $remaining = round($groupTotal - $changedAmount, 2);
+
+        $othersCurrentTotal = collect($others)->sum(fn ($key) => (float) ($get("schedule.{$group}.{$key}.amount") ?? 0));
+
+        $runningTotal = 0.0;
+        foreach ($others as $i => $key) {
+            if ($i === count($others) - 1) {
+                $newValue = round($remaining - $runningTotal, 2);
+            } else {
+                $currentValue = (float) ($get("schedule.{$group}.{$key}.amount") ?? 0);
+                $newValue = $othersCurrentTotal > 0 ? round($currentValue / $othersCurrentTotal * $remaining, 2) : round($remaining / count($others), 2);
+                $runningTotal += $newValue;
+            }
+
+            $set("schedule.{$group}.{$key}.amount", $newValue);
+        }
+    }
+
+    private function scheduleGrandTotal(Get $get): float
+    {
+        $total = 0.0;
+
+        foreach (['tax', 'inps', 'fattura_tra_privati'] as $group) {
+            foreach (array_keys($this->reviewBaseline['schedule'][$group] ?? []) as $key) {
+                $total += (float) ($get("schedule.{$group}.{$key}.amount") ?? 0);
+            }
+        }
+
+        if (($this->reviewBaseline['schedule']['inail'] ?? null) !== null) {
+            $total += (float) ($get('schedule.inail.amount') ?? 0);
+        }
+
+        return $total;
+    }
+
     public function getOverview(): array
     {
         return app(TaxOverviewService::class)->build($this->customerRecord, $this->selectedYear);
@@ -351,9 +472,12 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
             ->modalWidth('4xl')
             ->fillForm(function () {
                 $preview = app(TaxCalculationOrchestrator::class)->preview($this->customerRecord, $this->selectedYear);
-                $this->reviewBaseline = $preview;
+                $rawSchedule = app(PaymentScheduleService::class)->previewForYear($this->customerRecord, $this->selectedYear, $preview);
 
-                return $preview;
+                $this->reviewBaseline = $preview;
+                $this->reviewBaseline['schedule'] = $this->normalizeScheduleBaseline($rawSchedule);
+
+                return array_merge($preview, ['schedule' => $this->scheduleFormDefaults()]);
             })
             ->form([
                 Section::make(__('Income tax (Regime Forfettario)'))
@@ -412,21 +536,21 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                             ->helperText(__('Required only if the figure above was changed from its computed value.')),
                     ]),
                 Section::make(__('Provisional payment schedule'))
-                    ->description(__('Recalculated live from the figures above — see what would be scheduled before you save.'))
+                    ->description(__('Editable — change one installment and the others in its group rescale to keep the group\'s total unchanged.'))
                     ->schema([
-                        Placeholder::make('schedule_preview')
-                            ->hiddenLabel()
-                            ->content(fn (Get $get) => new HtmlString(view('filament.pages.partials.schedule-preview', [
-                                'rows' => app(PaymentScheduleService::class)->previewForYear($this->customerRecord, $this->selectedYear, [
-                                    'tax' => $get('tax') ?? [],
-                                    'inps' => array_merge($get('inps') ?? [], [
-                                        'fixed_amount' => $this->reviewBaseline['inps']['fixed_amount'] ?? null,
-                                        'calculation_method' => $this->reviewBaseline['inps']['calculation_method'] ?? null,
-                                    ]),
-                                    'inail' => $get('inail') ?? [],
-                                    'fattura_tra_privati' => $get('fattura_tra_privati') ?? [],
-                                ]),
-                            ])->render())),
+                        $this->scheduleGroupSection('tax', __('Tax'), ['balance', 'first_advance', 'second_advance']),
+                        $this->scheduleGroupSection('inps', __('INPS'), ['1', '2', '3', '4', '5']),
+                        Section::make(__('INAIL'))
+                            ->visible(fn () => ($this->reviewBaseline['schedule']['inail'] ?? null) !== null)
+                            ->schema([
+                                TextInput::make('schedule.inail.amount')->label(fn () => $this->reviewBaseline['schedule']['inail']['label'] ?? __('INAIL'))->numeric()->prefix('€')->live(),
+                                DatePicker::make('schedule.inail.due_date')->label(__('Due date'))->native(false)->displayFormat('d/m/Y'),
+                            ])
+                            ->columns(2),
+                        $this->scheduleGroupSection('fattura_tra_privati', __('Imposta di bollo'), ['0', '1', '2', '3', '4']),
+                        Placeholder::make('schedule_total')
+                            ->label(__('Total of all payments above'))
+                            ->content(fn (Get $get) => '€ '.number_format($this->scheduleGrandTotal($get), 2, ',', '.')),
                     ]),
             ])
             ->action(function (array $data) {

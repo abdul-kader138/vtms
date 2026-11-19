@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\IncomeData;
 use App\Models\TaxPayment;
 use App\Models\User;
+use App\Services\Tax\PaymentScheduleService;
 use App\Services\Tax\TaxCalculationOrchestrator;
 use Database\Seeders\InpsRateSlabSeeder;
 use Database\Seeders\ShieldSeeder;
@@ -102,6 +103,52 @@ class CustomerTaxDashboardTest extends TestCase
             ->mountAction('recalculate')
             ->assertSeeHtml('Provisional payment schedule')
             ->assertSeeHtml('Tax — balance');
+    }
+
+    public function test_editing_one_inps_installment_rescales_the_others_in_the_same_group(): void
+    {
+        $this->actingAs($this->admin);
+
+        $preview = app(TaxCalculationOrchestrator::class)->preview($this->customer, 2025);
+        $schedule = app(PaymentScheduleService::class)->previewForYear($this->customer, 2025, $preview);
+        $groupTotal = collect($schedule['inps'])->sum('amount');
+        $installment2 = (float) $schedule['inps']['2']['amount'];
+        $installment3 = (float) $schedule['inps']['3']['amount'];
+        $installment4 = (float) $schedule['inps']['4']['amount'];
+        $othersTotal = $installment2 + $installment3 + $installment4;
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.schedule.inps.1.amount', 0)
+            ->assertSet('mountedActionsData.0.schedule.inps.2.amount', round($installment2 / $othersTotal * $groupTotal, 2))
+            ->assertSet('mountedActionsData.0.schedule.inps.3.amount', round($installment3 / $othersTotal * $groupTotal, 2));
+    }
+
+    public function test_submitting_an_edited_installment_persists_it_and_requires_a_reason(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.schedule.inps.1.amount', 100.00)
+            ->callMountedAction()
+            ->assertOk();
+
+        // No reason was given, so the whole commit is refused — nothing persisted.
+        $this->assertDatabaseMissing('inps_payments', ['customer_id' => $this->customer->id, 'installment_number' => 1, 'amount' => 100.00]);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.schedule.inps.1.amount', 100.00)
+            ->set('mountedActionsData.0.inps.adjustment_reason', 'Settled installment 1 separately.')
+            ->callMountedAction()
+            ->assertOk();
+
+        $this->assertDatabaseHas('inps_payments', ['customer_id' => $this->customer->id, 'installment_number' => 1, 'amount' => 100.00]);
+        $this->assertDatabaseHas('inps_calculations', ['customer_id' => $this->customer->id, 'tax_year' => 2025, 'is_manually_adjusted' => true]);
     }
 
     public function test_mark_paid_action_is_reflected_immediately_without_reload(): void

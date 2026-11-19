@@ -274,4 +274,57 @@ class TaxCalculationOrchestratorTest extends TestCase
         $this->assertSame($approver->id, $request->reviewed_by);
         $this->assertNotNull($request->reviewed_at);
     }
+
+    public function test_commit_persists_a_schedule_row_override_and_flags_the_section_adjusted(): void
+    {
+        $this->seed(ShieldSeeder::class);
+        $user = User::factory()->create();
+        $user->givePermissionTo('finalize_tax_calculation');
+        $this->actingAs($user);
+
+        $customer = Customer::create([
+            'name' => 'Schedule Override', 'customer_type' => 'artigiani',
+            'coefficient_of_profitability' => 65.00, 'tax_rate' => 5.00,
+        ]);
+        IncomeData::create([
+            'customer_id' => $customer->id, 'source' => 'sdi_fattura', 'transaction_date' => '2025-03-01',
+            'sales_amount' => 18401.67, 'taxable_sales' => 18401.67, 'sale_taxes' => 0, 'tax_year' => 2025,
+        ]);
+
+        $result = app(TaxCalculationOrchestrator::class)->commit($customer, 2025, [
+            'inps' => ['adjustment_reason' => 'Installment 1 settled separately with the fund.'],
+            'schedule' => [
+                'inps' => ['1' => ['amount' => 100.00]],
+            ],
+        ]);
+
+        $this->assertTrue($result['inps']->is_manually_adjusted);
+        $this->assertSame($user->id, $result['inps']->adjusted_by);
+
+        $installment1 = $customer->inpsPayments()->where('installment_number', 1)->first();
+        $this->assertEqualsWithDelta(100.00, (float) $installment1->amount, 0.001);
+    }
+
+    public function test_commit_rejects_a_schedule_row_override_with_no_reason(): void
+    {
+        $this->seed(ShieldSeeder::class);
+        $user = User::factory()->create();
+        $user->givePermissionTo('finalize_tax_calculation');
+        $this->actingAs($user);
+
+        $customer = Customer::create([
+            'name' => 'Schedule No Reason', 'customer_type' => 'artigiani',
+            'coefficient_of_profitability' => 65.00, 'tax_rate' => 5.00,
+        ]);
+        IncomeData::create([
+            'customer_id' => $customer->id, 'source' => 'sdi_fattura', 'transaction_date' => '2025-03-01',
+            'sales_amount' => 18401.67, 'taxable_sales' => 18401.67, 'sale_taxes' => 0, 'tax_year' => 2025,
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+
+        app(TaxCalculationOrchestrator::class)->commit($customer, 2025, [
+            'schedule' => ['inps' => ['1' => ['amount' => 100.00]]],
+        ]);
+    }
 }

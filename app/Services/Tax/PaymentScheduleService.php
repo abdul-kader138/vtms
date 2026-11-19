@@ -37,8 +37,17 @@ class PaymentScheduleService
      *
      * Advances are stored with tax_year = Y+1, the year they count toward,
      * which is what TaxCalculationService sums as "advance_payments_made".
+     *
+     * $paymentOverrides is keyed exactly like TaxPaymentType's values
+     * ('balance', 'first_advance', 'second_advance') — see
+     * CustomerTaxDashboard's editable schedule rows — with each value an
+     * optional {amount, due_date}. Only rows this method would otherwise
+     * schedule can be overridden; it never invents a row that doesn't
+     * already apply.
+     *
+     * @param  array<string, array{amount?: mixed, due_date?: mixed}>  $paymentOverrides
      */
-    public function scheduleTaxPayments(TaxCalculation $tc, Customer $customer): void
+    public function scheduleTaxPayments(TaxCalculation $tc, Customer $customer, array $paymentOverrides = []): void
     {
         $year = $tc->tax_year;
         $next = $year + 1;
@@ -68,9 +77,10 @@ class PaymentScheduleService
         }
 
         if ($scheduleBalance) {
+            [$amount, $due] = $this->withOverride($paymentOverrides, TaxPaymentType::Balance->value, (float) $tc->balance_payment, $balanceDue);
             $this->upsert(TaxPayment::class,
                 ['customer_id' => $customer->id, 'payment_type' => TaxPaymentType::Balance, 'tax_year' => $year],
-                ['tax_calculation_id' => $tc->id, 'amount' => $tc->balance_payment, 'due_date' => $balanceDue]
+                ['tax_calculation_id' => $tc->id, 'amount' => $amount, 'due_date' => $due]
             );
         } else {
             $this->untouched(TaxPayment::where('customer_id', $customer->id)->where('payment_type', TaxPaymentType::Balance)->where('tax_year', $year))->delete();
@@ -79,6 +89,7 @@ class PaymentScheduleService
         foreach ([TaxPaymentType::FirstAdvance, TaxPaymentType::SecondAdvance] as $type) {
             if (isset($advances[$type->value])) {
                 [$amount, $due] = $advances[$type->value];
+                [$amount, $due] = $this->withOverride($paymentOverrides, $type->value, $amount, $due);
                 $this->upsert(TaxPayment::class,
                     ['customer_id' => $customer->id, 'payment_type' => $type, 'tax_year' => $next],
                     ['tax_calculation_id' => $tc->id, 'amount' => $amount, 'due_date' => $due]
@@ -96,14 +107,20 @@ class PaymentScheduleService
 
     public const INPS_EXCESS_SECOND_ADVANCE = 7;
 
-    public function scheduleInpsPayments(InpsCalculation $ic, Customer $customer): void
+    /**
+     * $paymentOverrides is keyed by installment_number (as a string, e.g.
+     * '1'..'7') — see CustomerTaxDashboard's editable schedule rows.
+     *
+     * @param  array<string, array{amount?: mixed, due_date?: mixed}>  $paymentOverrides
+     */
+    public function scheduleInpsPayments(InpsCalculation $ic, Customer $customer, array $paymentOverrides = []): void
     {
         $year = $ic->tax_year;
         $amount = (float) $ic->inps_amount_after_discount;
         $date = fn (int $y, int $m, int $d) => $this->deadline($y, $m, $d);
 
         if ($ic->calculation_method === InpsCalculationMethod::FixedPlusPercentage) {
-            $this->scheduleFixedPlusPercentage($ic, $customer);
+            $this->scheduleFixedPlusPercentage($ic, $customer, $paymentOverrides);
 
             return;
         }
@@ -113,9 +130,9 @@ class PaymentScheduleService
         $this->untouched(InpsPayment::where('customer_id', $customer->id)->where('payment_year', $year + 1)->whereIn('installment_number', [self::INPS_EXCESS_FIRST_ADVANCE, self::INPS_EXCESS_SECOND_ADVANCE]))->delete();
 
         if ($customer->customer_type === CustomerType::GestioneSeparata) {
-            $this->upsertInpsInstallment($customer, $ic, $year, 1, $amount, $date($year + 1, 6, 30));
-            $this->upsertInpsInstallment($customer, $ic, $year, 2, round($amount * 0.40, 2), $date($year + 1, 6, 30));
-            $this->upsertInpsInstallment($customer, $ic, $year, 3, round($amount * 0.40, 2), $date($year + 1, 11, 30));
+            $this->upsertInpsInstallment($customer, $ic, $year, 1, ...$this->withOverride($paymentOverrides, 1, $amount, $date($year + 1, 6, 30)));
+            $this->upsertInpsInstallment($customer, $ic, $year, 2, ...$this->withOverride($paymentOverrides, 2, round($amount * 0.40, 2), $date($year + 1, 6, 30)));
+            $this->upsertInpsInstallment($customer, $ic, $year, 3, ...$this->withOverride($paymentOverrides, 3, round($amount * 0.40, 2), $date($year + 1, 11, 30)));
 
             return;
         }
@@ -136,7 +153,7 @@ class PaymentScheduleService
         for ($i = 1; $i <= 4; $i++) {
             $installmentAmount = $i < 4 ? $base : round($amount - $runningTotal, 2);
             $runningTotal += $i < 4 ? $base : $installmentAmount;
-            $this->upsertInpsInstallment($customer, $ic, $year, $i, $installmentAmount, $dueDates[$i - 1]);
+            $this->upsertInpsInstallment($customer, $ic, $year, $i, ...$this->withOverride($paymentOverrides, $i, $installmentAmount, $dueDates[$i - 1]));
         }
     }
 
@@ -146,8 +163,10 @@ class PaymentScheduleService
      * Income above the minimale (code AP/CP), paid with the income tax:
      * balance on 30 Jun of Y+1 = amount due − advances scheduled toward Y;
      * advances toward Y+1 = 100% of it, two halves on 30 Jun and 30 Nov.
+     *
+     * @param  array<string, array{amount?: mixed, due_date?: mixed}>  $paymentOverrides
      */
-    private function scheduleFixedPlusPercentage(InpsCalculation $ic, Customer $customer): void
+    private function scheduleFixedPlusPercentage(InpsCalculation $ic, Customer $customer, array $paymentOverrides = []): void
     {
         $year = $ic->tax_year;
         $next = $year + 1;
@@ -156,7 +175,7 @@ class PaymentScheduleService
         $base = round($fixed / 4, 2);
         $dueDates = [$this->deadline($year, 5, 16), $this->deadline($year, 8, 20), $this->deadline($year, 11, 16), $this->deadline($next, 2, 16)];
         for ($i = 1; $i <= 4; $i++) {
-            $this->upsertInpsInstallment($customer, $ic, $year, $i, $i < 4 ? $base : round($fixed - 3 * $base, 2), $dueDates[$i - 1]);
+            $this->upsertInpsInstallment($customer, $ic, $year, $i, ...$this->withOverride($paymentOverrides, $i, $i < 4 ? $base : round($fixed - 3 * $base, 2), $dueDates[$i - 1]));
         }
 
         $advancesTowardYear = (float) InpsPayment::where('customer_id', $customer->id)->where('payment_year', $year)
@@ -165,17 +184,18 @@ class PaymentScheduleService
             ->sum('amount');
         $balance = round($variable - $advancesTowardYear, 2);
 
-        $this->scheduleOrRemoveInps($customer, $ic, $year, self::INPS_EXCESS_BALANCE, $balance, $this->deadline($next, 6, 30));
+        $this->scheduleOrRemoveInps($customer, $ic, $year, self::INPS_EXCESS_BALANCE, $balance, $this->deadline($next, 6, 30), $paymentOverrides);
 
         $first = round($variable / 2, 2);
-        $this->scheduleOrRemoveInps($customer, $ic, $next, self::INPS_EXCESS_FIRST_ADVANCE, $first, $this->deadline($next, 6, 30));
-        $this->scheduleOrRemoveInps($customer, $ic, $next, self::INPS_EXCESS_SECOND_ADVANCE, round($variable - $first, 2), $this->deadline($next, 11, 30));
+        $this->scheduleOrRemoveInps($customer, $ic, $next, self::INPS_EXCESS_FIRST_ADVANCE, $first, $this->deadline($next, 6, 30), $paymentOverrides);
+        $this->scheduleOrRemoveInps($customer, $ic, $next, self::INPS_EXCESS_SECOND_ADVANCE, round($variable - $first, 2), $this->deadline($next, 11, 30), $paymentOverrides);
     }
 
-    private function scheduleOrRemoveInps(Customer $customer, InpsCalculation $ic, int $paymentYear, int $installment, float $amount, CarbonInterface $due): void
+    /** @param  array<string, array{amount?: mixed, due_date?: mixed}>  $paymentOverrides */
+    private function scheduleOrRemoveInps(Customer $customer, InpsCalculation $ic, int $paymentYear, int $installment, float $amount, CarbonInterface $due, array $paymentOverrides = []): void
     {
-        if ($amount > 0) {
-            $this->upsertInpsInstallment($customer, $ic, $paymentYear, $installment, $amount, $due);
+        if ($amount > 0 || isset($paymentOverrides[(string) $installment])) {
+            $this->upsertInpsInstallment($customer, $ic, $paymentYear, $installment, ...$this->withOverride($paymentOverrides, $installment, $amount, $due));
 
             return;
         }
@@ -195,16 +215,24 @@ class PaymentScheduleService
         );
     }
 
-    public function scheduleInailPayment(InailCalculation $ic, Customer $customer): void
+    /**
+     * $paymentOverride is a single optional {amount, due_date} — INAIL has
+     * exactly one payment per year, so (unlike the other schedule*()
+     * methods) there's no sub-key to look it up by.
+     *
+     * @param  array{amount?: mixed, due_date?: mixed}  $paymentOverride
+     */
+    public function scheduleInailPayment(InailCalculation $ic, Customer $customer, array $paymentOverride = []): void
     {
         $year = $ic->tax_year;
+        [$amount, $due] = $this->withOverride(['row' => $paymentOverride], 'row', (float) $ic->inail_final_amount, $this->deadline($year + 1, 2, 16));
 
         $this->upsert(InailPayment::class,
             ['customer_id' => $customer->id, 'payment_year' => $year],
             [
                 'inail_calculation_id' => $ic->id,
-                'amount' => $ic->inail_final_amount,
-                'due_date' => $this->deadline($year + 1, 2, 16),
+                'amount' => $amount,
+                'due_date' => $due,
             ]
         );
     }
@@ -240,20 +268,27 @@ class PaymentScheduleService
      * Law: one payment per quarter (codes 2521–2524), due 31 May, 30 Sep,
      * 30 Nov and the last day of February (Y+1). Q1 moves to Q2's deadline
      * while it is ≤ €5,000, and Q1+Q2 move to Q3's while together ≤ €5,000.
+     *
+     * $paymentOverrides is keyed by quarter ('1'..'4'), or '0' under legacy
+     * rules (a single yearly payment) — see CustomerTaxDashboard's editable
+     * schedule rows.
+     *
+     * @param  array<string, array{amount?: mixed, due_date?: mixed}>  $paymentOverrides
      */
-    public function scheduleFatturaTraPrivatiPayment(FatturaTraPrivatiCalculation $fc, Customer $customer): void
+    public function scheduleFatturaTraPrivatiPayment(FatturaTraPrivatiCalculation $fc, Customer $customer, array $paymentOverrides = []): void
     {
         $year = $fc->tax_year;
 
         if (! TaxRules::isLaw()) {
             $this->untouched(FatturaTraPrivatiPayment::where('customer_id', $customer->id)->where('payment_year', $year)->where('quarter', '>', 0))->delete();
 
+            [$amount, $due] = $this->withOverride($paymentOverrides, 0, (float) $fc->total_payment_amount, Carbon::create($year + 1, 2, 16));
             $this->upsert(FatturaTraPrivatiPayment::class,
                 ['customer_id' => $customer->id, 'payment_year' => $year, 'quarter' => 0],
                 [
                     'fattura_tra_privati_calculation_id' => $fc->id,
-                    'amount' => $fc->total_payment_amount,
-                    'due_date' => Carbon::create($year + 1, 2, 16),
+                    'amount' => $amount,
+                    'due_date' => $due,
                 ]
             );
 
@@ -282,18 +317,20 @@ class PaymentScheduleService
         foreach ($amounts as $quarter => $amount) {
             $query = FatturaTraPrivatiPayment::where('customer_id', $customer->id)->where('payment_year', $year)->where('quarter', $quarter);
 
-            if ($amount <= 0) {
+            if ($amount <= 0 && ! isset($paymentOverrides[(string) $quarter])) {
                 $this->untouched($query)->delete();
 
                 continue;
             }
 
+            [$overriddenAmount, $due] = $this->withOverride($paymentOverrides, $quarter, $amount, $dueDates[$quarter]);
+
             $this->upsert(FatturaTraPrivatiPayment::class,
                 ['customer_id' => $customer->id, 'payment_year' => $year, 'quarter' => $quarter],
                 [
                     'fattura_tra_privati_calculation_id' => $fc->id,
-                    'amount' => $amount,
-                    'due_date' => $dueDates[$quarter],
+                    'amount' => $overriddenAmount,
+                    'due_date' => $due,
                 ]
             );
         }
@@ -317,45 +354,44 @@ class PaymentScheduleService
      * Read-only projection of what commit() would schedule for this year,
      * built from the (possibly staff-overridden) figures shown in
      * CustomerTaxDashboard's review modal — nothing here is read from or
-     * written to a *_payments table; it mirrors the real date/amount math
-     * above well enough for a provisional "does this look right" check
-     * before saving, not as a byte-for-byte replacement for it.
+     * written to a *_payments table. Used both to render the editable
+     * schedule rows in that modal and, inside
+     * TaxCalculationOrchestrator::commit(), as the baseline each row's
+     * manual edit is compared against.
      *
      * $values is keyed like TaxCalculationOrchestrator::preview()'s result
      * (tax/inps/inail/fattura_tra_privati); inps additionally needs
-     * fixed_amount/calculation_method from that same preview call, since
-     * the review form has no input for them (see CustomerTaxDashboard's
-     * $reviewBaseline).
+     * fixed_amount/calculation_method, and fattura_tra_privati needs
+     * minimum_invoice_amount/payment_per_invoice, from that same preview
+     * call, since the review form has no input for them (see
+     * CustomerTaxDashboard's $reviewBaseline).
      *
      * @param  array<string, array<string, mixed>>  $values
-     * @return list<array{label: string, due_date: ?CarbonInterface, amount: float}>
+     * @return array{
+     *     tax: array<string, array{label: string, due_date: ?CarbonInterface, amount: float}>,
+     *     inps: array<string, array{label: string, due_date: ?CarbonInterface, amount: float}>,
+     *     inail: ?array{label: string, due_date: ?CarbonInterface, amount: float},
+     *     fattura_tra_privati: array<string, array{label: string, due_date: ?CarbonInterface, amount: float}>,
+     * }
      */
     public function previewForYear(Customer $customer, int $year, array $values): array
     {
-        $rows = [];
-
-        if (($values['tax']['tax_due'] ?? null) !== null) {
-            $rows = array_merge($rows, $this->previewTaxPayments($values['tax'], $year, $customer));
-        }
-
-        if (($values['inps']['inps_amount_after_discount'] ?? null) !== null) {
-            $rows = array_merge($rows, $this->previewInpsPayments($values['inps'], $year, $customer));
-        }
-
-        if (($values['inail']['inail_final_amount'] ?? null) !== null) {
-            $rows[] = ['label' => __('INAIL'), 'due_date' => $this->deadline($year + 1, 2, 16), 'amount' => (float) $values['inail']['inail_final_amount']];
-        }
-
-        if (($values['fattura_tra_privati']['total_payment_amount'] ?? null) !== null) {
-            $rows[] = ['label' => __('Imposta di bollo (fattura tra privati) — split per quarter after saving'), 'due_date' => null, 'amount' => (float) $values['fattura_tra_privati']['total_payment_amount']];
-        }
-
-        usort($rows, fn ($a, $b) => ($a['due_date']?->timestamp ?? PHP_INT_MAX) <=> ($b['due_date']?->timestamp ?? PHP_INT_MAX));
-
-        return $rows;
+        return [
+            'tax' => ($values['tax']['tax_due'] ?? null) !== null ? $this->previewTaxPayments($values['tax'], $year, $customer) : [],
+            'inps' => ($values['inps']['inps_amount_after_discount'] ?? null) !== null ? $this->previewInpsPayments($values['inps'], $year, $customer) : [],
+            'inail' => ($values['inail']['inail_final_amount'] ?? null) !== null
+                ? ['label' => __('INAIL'), 'due_date' => $this->deadline($year + 1, 2, 16), 'amount' => (float) $values['inail']['inail_final_amount']]
+                : null,
+            'fattura_tra_privati' => ($values['fattura_tra_privati']['total_payment_amount'] ?? null) !== null
+                ? $this->previewFatturaPayments($values['fattura_tra_privati'], $year, $customer)
+                : [],
+        ];
     }
 
-    /** @param  array<string, mixed>  $tax */
+    /**
+     * @param  array<string, mixed>  $tax
+     * @return array<string, array{label: string, due_date: CarbonInterface, amount: float}>
+     */
     private function previewTaxPayments(array $tax, int $year, Customer $customer): array
     {
         $next = $year + 1;
@@ -367,11 +403,11 @@ class PaymentScheduleService
             $advances = match (true) {
                 $taxDue <= TaxRules::ADVANCE_MINIMUM => [],
                 $taxDue < TaxRules::ADVANCE_SINGLE_PAYMENT_LIMIT => [
-                    __('Tax — 2nd advance') => [round($taxDue, 2), $this->deadline($next, 11, 30)],
+                    TaxPaymentType::SecondAdvance->value => [round($taxDue, 2), $this->deadline($next, 11, 30)],
                 ],
                 default => [
-                    __('Tax — 1st advance') => [round($taxDue * 0.40, 2), $this->deadline($next, 6, 30)],
-                    __('Tax — 2nd advance') => [round($taxDue - round($taxDue * 0.40, 2), 2), $this->deadline($next, 11, 30)],
+                    TaxPaymentType::FirstAdvance->value => [round($taxDue * 0.40, 2), $this->deadline($next, 6, 30)],
+                    TaxPaymentType::SecondAdvance->value => [round($taxDue - round($taxDue * 0.40, 2), 2), $this->deadline($next, 11, 30)],
                 ],
             };
             $scheduleBalance = (float) ($tax['balance_payment'] ?? 0) > 0;
@@ -379,24 +415,28 @@ class PaymentScheduleService
             $balanceDue = Carbon::create($next, 2, 16);
             $each = round($taxDue * 0.40, 2);
             $advances = $each > 0 ? [
-                __('Tax — 1st advance') => [$each, Carbon::create($next, 6, 30)],
-                __('Tax — 2nd advance') => [$each, Carbon::create($next, 11, 30)],
+                TaxPaymentType::FirstAdvance->value => [$each, Carbon::create($next, 6, 30)],
+                TaxPaymentType::SecondAdvance->value => [$each, Carbon::create($next, 11, 30)],
             ] : [];
             $scheduleBalance = $customer->business_start_date?->year !== $year;
         }
 
         if ($scheduleBalance) {
-            $rows[] = ['label' => __('Tax — balance'), 'due_date' => $balanceDue, 'amount' => (float) ($tax['balance_payment'] ?? 0)];
+            $rows[TaxPaymentType::Balance->value] = ['label' => __('Tax — balance'), 'due_date' => $balanceDue, 'amount' => (float) ($tax['balance_payment'] ?? 0)];
         }
 
-        foreach ($advances as $label => [$amount, $due]) {
-            $rows[] = ['label' => $label, 'due_date' => $due, 'amount' => $amount];
+        $labels = [TaxPaymentType::FirstAdvance->value => __('Tax — 1st advance'), TaxPaymentType::SecondAdvance->value => __('Tax — 2nd advance')];
+        foreach ($advances as $key => [$amount, $due]) {
+            $rows[$key] = ['label' => $labels[$key], 'due_date' => $due, 'amount' => $amount];
         }
 
         return $rows;
     }
 
-    /** @param  array<string, mixed>  $inps */
+    /**
+     * @param  array<string, mixed>  $inps
+     * @return array<string, array{label: string, due_date: CarbonInterface, amount: float}>
+     */
     private function previewInpsPayments(array $inps, int $year, Customer $customer): array
     {
         $amount = (float) $inps['inps_amount_after_discount'];
@@ -409,15 +449,15 @@ class PaymentScheduleService
             $fixed = round((float) ($inps['fixed_amount'] ?? 0) * $factor, 2);
             $variable = round($amount - $fixed, 2);
 
-            $base = round($fixed / 4, 2);
             $dueDates = [$date($year, 5, 16), $date($year, 8, 20), $date($year, 11, 16), $date($year + 1, 2, 16)];
+            $base = round($fixed / 4, 2);
             $rows = [];
             for ($i = 1; $i <= 4; $i++) {
-                $rows[] = ['label' => __('INPS — fixed installment :n', ['n' => $i]), 'due_date' => $dueDates[$i - 1], 'amount' => $i < 4 ? $base : round($fixed - 3 * $base, 2)];
+                $rows[(string) $i] = ['label' => __('INPS — fixed installment :n', ['n' => $i]), 'due_date' => $dueDates[$i - 1], 'amount' => $i < 4 ? $base : round($fixed - 3 * $base, 2)];
             }
 
             if ($variable > 0) {
-                $rows[] = ['label' => __('INPS — balance on income above the minimale'), 'due_date' => $date($year + 1, 6, 30), 'amount' => $variable];
+                $rows[(string) self::INPS_EXCESS_BALANCE] = ['label' => __('INPS — balance on income above the minimale'), 'due_date' => $date($year + 1, 6, 30), 'amount' => $variable];
             }
 
             return $rows;
@@ -425,9 +465,9 @@ class PaymentScheduleService
 
         if ($customer->customer_type === CustomerType::GestioneSeparata) {
             return [
-                ['label' => __('INPS — balance'), 'due_date' => $date($year + 1, 6, 30), 'amount' => $amount],
-                ['label' => __('INPS — 1st advance'), 'due_date' => $date($year + 1, 6, 30), 'amount' => round($amount * 0.40, 2)],
-                ['label' => __('INPS — 2nd advance'), 'due_date' => $date($year + 1, 11, 30), 'amount' => round($amount * 0.40, 2)],
+                '1' => ['label' => __('INPS — balance'), 'due_date' => $date($year + 1, 6, 30), 'amount' => $amount],
+                '2' => ['label' => __('INPS — 1st advance'), 'due_date' => $date($year + 1, 6, 30), 'amount' => round($amount * 0.40, 2)],
+                '3' => ['label' => __('INPS — 2nd advance'), 'due_date' => $date($year + 1, 11, 30), 'amount' => round($amount * 0.40, 2)],
             ];
         }
 
@@ -440,7 +480,45 @@ class PaymentScheduleService
         for ($i = 1; $i <= 4; $i++) {
             $installmentAmount = $i < 4 ? $base : round($amount - $runningTotal, 2);
             $runningTotal += $i < 4 ? $base : $installmentAmount;
-            $rows[] = ['label' => __('INPS — installment :n', ['n' => $i]), 'due_date' => $dueDates[$i - 1], 'amount' => $installmentAmount];
+            $rows[(string) $i] = ['label' => __('INPS — installment :n', ['n' => $i]), 'due_date' => $dueDates[$i - 1], 'amount' => $installmentAmount];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  array<string, mixed>  $fc
+     * @return array<string, array{label: string, due_date: CarbonInterface, amount: float}>
+     */
+    private function previewFatturaPayments(array $fc, int $year, Customer $customer): array
+    {
+        if (! TaxRules::isLaw()) {
+            return ['0' => ['label' => __('Imposta di bollo (fattura tra privati)'), 'due_date' => Carbon::create($year + 1, 2, 16), 'amount' => (float) ($fc['total_payment_amount'] ?? 0)]];
+        }
+
+        $amounts = $this->quarterlyStampDuty($customer, $year, (float) ($fc['minimum_invoice_amount'] ?? 0), (float) ($fc['payment_per_invoice'] ?? 0));
+        $limit = TaxRules::STAMP_DUTY_DEFERRAL_LIMIT;
+
+        $dueDates = [
+            1 => $this->deadline($year, 5, 31),
+            2 => $this->deadline($year, 9, 30),
+            3 => $this->deadline($year, 11, 30),
+            4 => ItalianCalendar::nextBusinessDay(Carbon::create($year + 1, 2, 1)->endOfMonth()),
+        ];
+        if ($amounts[1] <= $limit) {
+            $dueDates[1] = $dueDates[2];
+        }
+        if ($limit >= $amounts[1] + $amounts[2]) {
+            $dueDates[1] = $dueDates[2] = $dueDates[3];
+        }
+
+        $rows = [];
+        foreach ($amounts as $quarter => $amount) {
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $rows[(string) $quarter] = ['label' => __('Imposta di bollo — Q:quarter', ['quarter' => $quarter]), 'due_date' => $dueDates[$quarter], 'amount' => $amount];
         }
 
         return $rows;
@@ -479,5 +557,27 @@ class PaymentScheduleService
         return $query->whereIn('status', [PaymentStatus::Pending, PaymentStatus::Overdue])
             ->where('paid_amount', 0)
             ->whereNull('uploaded_pdf');
+    }
+
+    /**
+     * Applies a staff override for one schedule row, if given — the amount
+     * and/or due date CustomerTaxDashboard's review modal submitted for
+     * this row, in place of the freshly computed ones.
+     *
+     * @param  array<string, array{amount?: mixed, due_date?: mixed}>  $overrides
+     * @return array{0: float, 1: CarbonInterface}
+     */
+    private function withOverride(array $overrides, string|int $key, float $amount, CarbonInterface $due): array
+    {
+        $override = $overrides[(string) $key] ?? null;
+
+        if ($override === null) {
+            return [$amount, $due];
+        }
+
+        $overriddenAmount = isset($override['amount']) && $override['amount'] !== '' ? (float) $override['amount'] : $amount;
+        $overriddenDue = ! empty($override['due_date']) ? Carbon::parse($override['due_date']) : $due;
+
+        return [$overriddenAmount, $overriddenDue];
     }
 }

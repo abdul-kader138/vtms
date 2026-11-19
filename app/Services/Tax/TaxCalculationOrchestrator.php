@@ -78,6 +78,15 @@ class TaxCalculationOrchestrator
      * is_manually_adjusted when a committed value differs from what was
      * just computed for it.
      *
+     * `$overrides['schedule']` additionally carries a per-payment-row
+     * override, keyed like PaymentScheduleService::previewForYear()'s
+     * result (`tax`/`inps`/`fattura_tra_privati` by row key,
+     * `inail` a single row) — see CustomerTaxDashboard's editable schedule
+     * section. Overriding a row's amount counts as manually adjusting that
+     * row's own section exactly like overriding one of the figures above:
+     * same adjustment_reason/finalize_tax_calculation gate, same
+     * is_manually_adjusted flag on that section's calculation row.
+     *
      * @param  array<string, array<string, mixed>>  $overrides
      *
      * @throws \RuntimeException if the year is locked (see TaxYearLock), a
@@ -95,22 +104,46 @@ class TaxCalculationOrchestrator
         $this->varianceWarnings = [];
 
         return DB::transaction(function () use ($customer, $year, $overrides) {
-            $taxValues = $this->adjusted($this->taxCalculationService->compute($customer, $year), $overrides['tax'] ?? [], __('Income tax'));
-            $taxCalculation = TaxCalculation::updateOrCreate(['customer_id' => $customer->id, 'tax_year' => $year], $taxValues);
-            $this->paymentScheduleService->scheduleTaxPayments($taxCalculation, $customer);
+            $scheduleOverrides = $overrides['schedule'] ?? [];
 
-            $inpsValues = $this->adjusted($this->inpsCalculationService->compute($customer, $year, $taxCalculation), $overrides['inps'] ?? [], __('INPS'));
+            // Each section's schedule baseline is built from its own
+            // calculator override already merged in (but before any
+            // schedule-row override) — exactly the split
+            // PaymentScheduleService::schedule*() would compute by default
+            // for the figures about to be persisted, which is what a
+            // row-level override should be compared against.
+            $taxComputed = $this->taxCalculationService->compute($customer, $year);
+            $taxScheduleBaseline = $this->paymentScheduleService->previewForYear($customer, $year, [
+                'tax' => array_merge($taxComputed, $overrides['tax'] ?? []),
+            ])['tax'];
+            $taxValues = $this->adjusted($taxComputed, $overrides['tax'] ?? [], __('Income tax'), $taxScheduleBaseline, $scheduleOverrides['tax'] ?? []);
+            $taxCalculation = TaxCalculation::updateOrCreate(['customer_id' => $customer->id, 'tax_year' => $year], $taxValues);
+            $this->paymentScheduleService->scheduleTaxPayments($taxCalculation, $customer, $scheduleOverrides['tax'] ?? []);
+
+            $inpsComputed = $this->inpsCalculationService->compute($customer, $year, $taxCalculation);
+            $inpsScheduleBaseline = $this->paymentScheduleService->previewForYear($customer, $year, [
+                'inps' => array_merge($inpsComputed, $overrides['inps'] ?? []),
+            ])['inps'];
+            $inpsValues = $this->adjusted($inpsComputed, $overrides['inps'] ?? [], __('INPS'), $inpsScheduleBaseline, $scheduleOverrides['inps'] ?? []);
             $inpsCalculation = InpsCalculation::updateOrCreate(['customer_id' => $customer->id, 'tax_year' => $year], $inpsValues);
-            $this->paymentScheduleService->scheduleInpsPayments($inpsCalculation, $customer);
+            $this->paymentScheduleService->scheduleInpsPayments($inpsCalculation, $customer, $scheduleOverrides['inps'] ?? []);
 
             $inailComputed = $this->inailCalculationService->compute($customer, $year, $taxCalculation);
             $inailCalculation = null;
             if ($inailComputed !== null) {
+                $inailScheduleBaseline = $this->paymentScheduleService->previewForYear($customer, $year, [
+                    'inail' => array_merge($inailComputed, $overrides['inail'] ?? []),
+                ])['inail'];
+                $inailScheduleOverride = $scheduleOverrides['inail'] ?? [];
                 $inailCalculation = InailCalculation::updateOrCreate(
                     ['customer_id' => $customer->id, 'tax_year' => $year],
-                    $this->adjusted($inailComputed, $overrides['inail'] ?? [], __('INAIL'))
+                    $this->adjusted(
+                        $inailComputed, $overrides['inail'] ?? [], __('INAIL'),
+                        $inailScheduleBaseline !== null ? ['row' => $inailScheduleBaseline] : [],
+                        $inailScheduleOverride !== [] ? ['row' => $inailScheduleOverride] : [],
+                    )
                 );
-                $this->paymentScheduleService->scheduleInailPayment($inailCalculation, $customer);
+                $this->paymentScheduleService->scheduleInailPayment($inailCalculation, $customer, $inailScheduleOverride);
             }
 
             $bracket = null;
@@ -129,11 +162,14 @@ class TaxCalculationOrchestrator
             $fatturaComputed = $this->fatturaTraPrivatiCalculationService->compute($customer, $year);
             $fatturaCalculation = null;
             if ($fatturaComputed !== null) {
+                $fatturaScheduleBaseline = $this->paymentScheduleService->previewForYear($customer, $year, [
+                    'fattura_tra_privati' => array_merge($fatturaComputed, $overrides['fattura_tra_privati'] ?? []),
+                ])['fattura_tra_privati'];
                 $fatturaCalculation = FatturaTraPrivatiCalculation::updateOrCreate(
                     ['customer_id' => $customer->id, 'tax_year' => $year],
-                    $this->adjusted($fatturaComputed, $overrides['fattura_tra_privati'] ?? [], __('Imposta di bollo'))
+                    $this->adjusted($fatturaComputed, $overrides['fattura_tra_privati'] ?? [], __('Imposta di bollo'), $fatturaScheduleBaseline, $scheduleOverrides['fattura_tra_privati'] ?? [])
                 );
-                $this->paymentScheduleService->scheduleFatturaTraPrivatiPayment($fatturaCalculation, $customer);
+                $this->paymentScheduleService->scheduleFatturaTraPrivatiPayment($fatturaCalculation, $customer, $scheduleOverrides['fattura_tra_privati'] ?? []);
             }
 
             return [
@@ -150,17 +186,20 @@ class TaxCalculationOrchestrator
     /**
      * Merges staff overrides onto computed values, flagging
      * is_manually_adjusted/adjusted_by/adjusted_at when any overridden field
+     * — or any overridden schedule-row amount in $scheduleOverride —
      * actually differs from what was just computed for it. A real
      * adjustment requires an adjustment_reason (maker-checker-lite: the
      * person finalizing it must also have the finalize_tax_calculation
-     * permission) and, past VARIANCE_*_THRESHOLD, adds a entry to
+     * permission) and, past VARIANCE_*_THRESHOLD, adds an entry to
      * $this->varianceWarnings for the caller to surface non-fatally.
      *
      * @param  array<string, mixed>  $computed
      * @param  array<string, mixed>  $override
+     * @param  array<string, array{label: string, due_date: mixed, amount: float}>  $scheduleBaseline
+     * @param  array<string, array{amount?: mixed, due_date?: mixed}>  $scheduleOverride
      * @return array<string, mixed>
      */
-    private function adjusted(array $computed, array $override, string $label): array
+    private function adjusted(array $computed, array $override, string $label, array $scheduleBaseline = [], array $scheduleOverride = []): array
     {
         $isAdjusted = false;
         foreach ($override as $field => $value) {
@@ -169,6 +208,16 @@ class TaxCalculationOrchestrator
             }
 
             if (round((float) $computed[$field], 2) !== round((float) $value, 2)) {
+                $isAdjusted = true;
+            }
+        }
+
+        foreach ($scheduleOverride as $key => $row) {
+            if (! isset($row['amount']) || $row['amount'] === '' || ! isset($scheduleBaseline[$key]['amount'])) {
+                continue;
+            }
+
+            if (round((float) $scheduleBaseline[$key]['amount'], 2) !== round((float) $row['amount'], 2)) {
                 $isAdjusted = true;
             }
         }
@@ -183,6 +232,7 @@ class TaxCalculationOrchestrator
             }
 
             $this->collectVarianceWarnings($computed, $override, $label);
+            $this->collectScheduleVarianceWarnings($scheduleBaseline, $scheduleOverride, $label);
         }
 
         return array_merge($computed, $override, [
@@ -217,6 +267,43 @@ class TaxCalculationOrchestrator
                 $this->varianceWarnings[] = __(':label — :field: computed € :computed, overridden to € :override (:percent).', [
                     'label' => $label,
                     'field' => $field,
+                    'computed' => number_format($computedValue, 2, ',', '.'),
+                    'override' => number_format($overrideValue, 2, ',', '.'),
+                    'percent' => $percent !== null ? number_format($percent, 1).'%' : 'n/a',
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Same as collectVarianceWarnings(), but for an edited schedule row
+     * (an individual payment's amount) instead of a top-level calculator
+     * figure.
+     *
+     * @param  array<string, array{label: string, due_date: mixed, amount: float}>  $scheduleBaseline
+     * @param  array<string, array{amount?: mixed, due_date?: mixed}>  $scheduleOverride
+     */
+    private function collectScheduleVarianceWarnings(array $scheduleBaseline, array $scheduleOverride, string $label): void
+    {
+        foreach ($scheduleOverride as $key => $row) {
+            if (! isset($row['amount']) || $row['amount'] === '' || ! isset($scheduleBaseline[$key]['amount'])) {
+                continue;
+            }
+
+            $computedValue = (float) $scheduleBaseline[$key]['amount'];
+            $overrideValue = (float) $row['amount'];
+            $diff = abs($overrideValue - $computedValue);
+
+            if ($diff < 0.01) {
+                continue;
+            }
+
+            $percent = $computedValue !== 0.0 ? abs($diff / $computedValue) * 100 : null;
+
+            if ($diff >= self::VARIANCE_ABSOLUTE_THRESHOLD || ($percent !== null && $percent >= self::VARIANCE_PERCENT_THRESHOLD)) {
+                $this->varianceWarnings[] = __(':label — :row: computed € :computed, overridden to € :override (:percent).', [
+                    'label' => $label,
+                    'row' => $scheduleBaseline[$key]['label'] ?? $key,
                     'computed' => number_format($computedValue, 2, ',', '.'),
                     'override' => number_format($overrideValue, 2, ',', '.'),
                     'percent' => $percent !== null ? number_format($percent, 1).'%' : 'n/a',

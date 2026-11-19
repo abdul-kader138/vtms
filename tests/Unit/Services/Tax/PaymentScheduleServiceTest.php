@@ -4,7 +4,9 @@ namespace Tests\Unit\Services\Tax;
 
 use App\Models\Customer;
 use App\Models\DirittoAnnualeBracket;
+use App\Models\InailCalculation;
 use App\Models\InpsCalculation;
+use App\Models\TaxCalculation;
 use App\Services\Tax\PaymentScheduleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -107,17 +109,15 @@ class PaymentScheduleServiceTest extends TestCase
     {
         $customer = Customer::create(['name' => 'Artigiano Preview', 'customer_type' => 'artigiani']);
 
-        $rows = $this->service->previewForYear($customer, 2025, [
+        $schedule = $this->service->previewForYear($customer, 2025, [
             'tax' => ['tax_due' => 0, 'balance_payment' => 0],
             'inps' => ['inps_amount_after_discount' => 1583.35, 'discount_percentage' => 0, 'calculation_method' => 'percentage'],
         ]);
 
-        $inpsRows = collect($rows)->filter(fn ($r) => str_starts_with($r['label'], 'INPS'))->values();
-
-        $this->assertCount(4, $inpsRows);
-        $this->assertEqualsWithDelta(395.84, $inpsRows[0]['amount'], 0.001);
-        $this->assertEqualsWithDelta(395.83, $inpsRows[3]['amount'], 0.001);
-        $this->assertSame('2025-05-16', $inpsRows[0]['due_date']->toDateString());
+        $this->assertCount(4, $schedule['inps']);
+        $this->assertEqualsWithDelta(395.84, $schedule['inps']['1']['amount'], 0.001);
+        $this->assertEqualsWithDelta(395.83, $schedule['inps']['4']['amount'], 0.001);
+        $this->assertSame('2025-05-16', $schedule['inps']['1']['due_date']->toDateString());
 
         $this->assertDatabaseCount('inps_payments', 0);
         $this->assertDatabaseCount('inps_calculations', 0);
@@ -127,53 +127,104 @@ class PaymentScheduleServiceTest extends TestCase
     {
         $customer = Customer::create(['name' => 'GS Preview', 'customer_type' => 'gestione_separata']);
 
-        $rows = $this->service->previewForYear($customer, 2025, [
+        $schedule = $this->service->previewForYear($customer, 2025, [
             'tax' => ['tax_due' => 0, 'balance_payment' => 0],
             'inps' => ['inps_amount_after_discount' => 1000.00, 'discount_percentage' => 0, 'calculation_method' => 'percentage'],
         ]);
 
-        $inpsRows = collect($rows)->filter(fn ($r) => str_starts_with($r['label'], 'INPS'))->values();
-
-        $this->assertCount(3, $inpsRows);
-        $this->assertEqualsWithDelta(1000.00, $inpsRows[0]['amount'], 0.001);
-        $this->assertEqualsWithDelta(400.00, $inpsRows[1]['amount'], 0.001);
-        $this->assertEqualsWithDelta(400.00, $inpsRows[2]['amount'], 0.001);
-        $this->assertSame('2026-06-30', $inpsRows[0]['due_date']->toDateString());
-        $this->assertSame('2026-11-30', $inpsRows[2]['due_date']->toDateString());
+        $this->assertCount(3, $schedule['inps']);
+        $this->assertEqualsWithDelta(1000.00, $schedule['inps']['1']['amount'], 0.001);
+        $this->assertEqualsWithDelta(400.00, $schedule['inps']['2']['amount'], 0.001);
+        $this->assertEqualsWithDelta(400.00, $schedule['inps']['3']['amount'], 0.001);
+        $this->assertSame('2026-06-30', $schedule['inps']['1']['due_date']->toDateString());
+        $this->assertSame('2026-11-30', $schedule['inps']['3']['due_date']->toDateString());
     }
 
     public function test_preview_for_year_includes_tax_inail_and_fattura_rows_and_totals_them(): void
     {
         $customer = Customer::create(['name' => 'Full Preview', 'customer_type' => 'gestione_separata', 'business_start_date' => '2020-01-01']);
 
-        $rows = $this->service->previewForYear($customer, 2025, [
+        $schedule = $this->service->previewForYear($customer, 2025, [
             'tax' => ['tax_due' => 1000.00, 'balance_payment' => 200.00],
             'inps' => ['inps_amount_after_discount' => 100.00, 'discount_percentage' => 0, 'calculation_method' => 'percentage'],
             'inail' => ['inail_final_amount' => 210.00],
             'fattura_tra_privati' => ['total_payment_amount' => 10.00],
         ]);
 
-        $this->assertTrue(collect($rows)->contains(fn ($r) => $r['label'] === 'Tax — balance' && $r['amount'] === 200.00));
-        $this->assertTrue(collect($rows)->contains(fn ($r) => $r['label'] === 'INAIL' && $r['amount'] === 210.00));
-        $this->assertTrue(collect($rows)->contains(fn ($r) => $r['amount'] === 10.00 && $r['due_date'] === null));
+        $this->assertEqualsWithDelta(200.00, $schedule['tax']['balance']['amount'], 0.001);
+        $this->assertEqualsWithDelta(210.00, $schedule['inail']['amount'], 0.001);
+        $this->assertEqualsWithDelta(10.00, $schedule['fattura_tra_privati']['0']['amount'], 0.001);
+
+        $allAmounts = collect($schedule['tax'])->pluck('amount')
+            ->merge(collect($schedule['inps'])->pluck('amount'))
+            ->push($schedule['inail']['amount'])
+            ->merge(collect($schedule['fattura_tra_privati'])->pluck('amount'));
 
         // Tax: balance 200 + two 40% advances of the 1000 tax_due (400 each).
         // INPS (Gestione Separata, 100 after discount): balance 100 + two 40% advances (40 each).
-        $this->assertEqualsWithDelta(200.00 + 400.00 + 400.00 + 100.00 + 40.00 + 40.00 + 210.00 + 10.00, collect($rows)->sum('amount'), 0.001);
+        $this->assertEqualsWithDelta(200.00 + 400.00 + 400.00 + 100.00 + 40.00 + 40.00 + 210.00 + 10.00, $allAmounts->sum(), 0.001);
     }
 
     public function test_preview_for_year_omits_a_calculator_the_form_left_blank(): void
     {
         $customer = Customer::create(['name' => 'Omit Preview', 'customer_type' => 'gestione_separata']);
 
-        $rows = $this->service->previewForYear($customer, 2025, [
+        $schedule = $this->service->previewForYear($customer, 2025, [
             'tax' => ['tax_due' => 0, 'balance_payment' => 0],
             'inps' => ['inps_amount_after_discount' => 100.00, 'discount_percentage' => 0, 'calculation_method' => 'percentage'],
             'inail' => ['inail_final_amount' => null],
             'fattura_tra_privati' => ['total_payment_amount' => null],
         ]);
 
-        $this->assertFalse(collect($rows)->contains(fn ($r) => $r['label'] === 'INAIL'));
-        $this->assertFalse(collect($rows)->contains(fn ($r) => str_contains($r['label'], 'Imposta di bollo')));
+        $this->assertNull($schedule['inail']);
+        $this->assertSame([], $schedule['fattura_tra_privati']);
+    }
+
+    public function test_schedule_inps_payments_applies_a_per_installment_override(): void
+    {
+        $customer = Customer::create(['name' => 'Override Artigiano', 'customer_type' => 'artigiani']);
+        $ic = $this->fakeInpsCalculation($customer, 2025, 1583.35);
+
+        $this->service->scheduleInpsPayments($ic, $customer, [
+            '1' => ['amount' => 500.00, 'due_date' => '2025-06-01'],
+        ]);
+
+        $installments = $customer->inpsPayments()->orderBy('installment_number')->get();
+
+        $this->assertEqualsWithDelta(500.00, (float) $installments[0]->amount, 0.001);
+        $this->assertSame('2025-06-01', $installments[0]->due_date->toDateString());
+        // The other 3 installments are untouched by the override.
+        $this->assertEqualsWithDelta(395.84, (float) $installments[1]->amount, 0.001);
+    }
+
+    public function test_schedule_tax_payments_applies_an_override_to_one_installment(): void
+    {
+        $customer = Customer::create(['name' => 'Override Tax', 'customer_type' => 'gestione_separata', 'business_start_date' => '2020-01-01']);
+        $tc = TaxCalculation::create([
+            'customer_id' => $customer->id, 'tax_year' => 2025, 'total_sales' => 0, 'gross_income' => 0,
+            'inps_deducted' => 0, 'taxable_income' => 0, 'coefficient_used' => 0, 'tax_rate_used' => 0,
+            'tax_due' => 1000.00, 'advance_payments_made' => 0, 'balance_payment' => 200.00, 'next_year_advance_base' => 0,
+        ]);
+
+        $this->service->scheduleTaxPayments($tc, $customer, [
+            'balance' => ['amount' => 250.00],
+        ]);
+
+        $balance = $customer->taxPayments()->where('payment_type', 'balance')->where('tax_year', 2025)->first();
+        $this->assertEqualsWithDelta(250.00, (float) $balance->amount, 0.001);
+    }
+
+    public function test_schedule_inail_payment_applies_an_override(): void
+    {
+        $customer = Customer::create(['name' => 'Override Inail', 'customer_type' => 'artigiani']);
+        $ic = InailCalculation::create([
+            'customer_id' => $customer->id, 'tax_year' => 2025, 'taxable_income' => 0,
+            'inail_rate' => 0, 'inail_calculated_amount' => 0, 'inail_minimum_payment' => 0, 'inail_final_amount' => 210.00,
+        ]);
+
+        $this->service->scheduleInailPayment($ic, $customer, ['amount' => 300.00]);
+
+        $payment = $customer->inailPayments()->first();
+        $this->assertEqualsWithDelta(300.00, (float) $payment->amount, 0.001);
     }
 }
