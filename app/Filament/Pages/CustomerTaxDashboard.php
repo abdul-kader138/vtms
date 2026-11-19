@@ -252,13 +252,63 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
         $set('inps.discount_amount', $expected['discount_amount']);
         $set('inps.inps_amount_after_discount', $expected['inps_amount_after_discount']);
 
-        // Only these two feed the schedule preview's fixed/variable split
-        // (see scheduleGroupSection()/PaymentScheduleService::previewForYear())
-        // — everything else in $this->reviewBaseline stays as it was at fillForm time.
-        $this->reviewBaseline['inps']['fixed_amount'] = $expected['fixed_amount'] ?? null;
-        $this->reviewBaseline['inps']['calculation_method'] = $expected['calculation_method'] ?? null;
+        // The new income's computed INPS becomes the baseline: it feeds the
+        // schedule preview's fixed/variable split and is what
+        // isSectionAdjusted() compares the INPS fields against — same as
+        // TaxCalculationOrchestrator::commit() recomputing INPS from the
+        // overridden income.
+        $this->reviewBaseline['inps'] = $expected;
 
         $this->resyncInpsSchedule($set, $get);
+    }
+
+    /**
+     * Whether any figure or schedule installment of $group currently
+     * differs from its computed value — mirrors the check
+     * TaxCalculationOrchestrator::adjusted() makes on save, so the
+     * section's "Reason for changes" can be marked required in the form
+     * (inline error, modal stays open) instead of the save failing
+     * afterwards with "a reason is required".
+     *
+     * @param  'tax'|'inps'|'inail'|'fattura_tra_privati'  $group
+     */
+    private function isSectionAdjusted(Get $get, string $group): bool
+    {
+        $computed = $this->reviewBaseline[$group] ?? null;
+
+        if (! is_array($computed)) {
+            return false;
+        }
+
+        // Not a computed figure — compute() never returns it, so commit() never compares it.
+        unset($computed['employee_cost']);
+
+        foreach ((array) $get($group) as $field => $value) {
+            if ($field === 'adjustment_reason' || ! array_key_exists($field, $computed) || ! is_numeric($value) || ! is_numeric($computed[$field])) {
+                continue;
+            }
+
+            if (round((float) $computed[$field], 2) !== round((float) $value, 2)) {
+                return true;
+            }
+        }
+
+        $scheduleBaseline = $this->reviewBaseline['schedule'][$group] ?? [];
+        $scheduleRows = $group === 'inail'
+            ? ['row' => [$scheduleBaseline, $get('schedule.inail.amount')]]
+            : collect($scheduleBaseline)->map(fn (array $row, $key) => [$row, $get("schedule.{$group}.{$key}.amount")])->all();
+
+        foreach ($scheduleRows as [$baselineRow, $amount]) {
+            if (! isset($baselineRow['amount']) || $amount === null || $amount === '') {
+                continue;
+            }
+
+            if (round((float) $baselineRow['amount'], 2) !== round((float) $amount, 2)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -640,7 +690,8 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                             ->helperText(fn () => $this->previousValueHelper($this->getTaxCalculation(), 'balance_payment')),
                         TextInput::make('tax.employee_cost')->label(__('Employee/collaborator costs this year'))->numeric()->prefix('€')
                             ->helperText(fn () => __('Regime Forfettario limit: € :limit. Leave blank if not tracked.', ['limit' => number_format((float) ($this->customerRecord->employee_cost_limit ?? 20000), 2, ',', '.')])),
-                        Textarea::make('tax.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
+                        Textarea::make('tax.adjustment_reason')->label(__('Reason for changes'))->rows(2)
+                            ->required(fn (Get $get) => $this->isSectionAdjusted($get, 'tax'))->columnSpanFull()
                             ->helperText(__('Required only if a figure above was changed from its computed value.')),
                     ])
                     ->columns(2),
@@ -668,7 +719,8 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                             ->visible(fn (Get $get) => $this->slabMismatch($get) !== null)
                             ->rules(fn (Get $get) => $this->slabMismatch($get) !== null ? ['accepted'] : [])
                             ->columnSpanFull(),
-                        Textarea::make('inps.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
+                        Textarea::make('inps.adjustment_reason')->label(__('Reason for changes'))->rows(2)
+                            ->required(fn (Get $get) => $this->isSectionAdjusted($get, 'inps'))->columnSpanFull()
                             ->helperText(__('Required only if a figure above was changed from its computed value.')),
                     ])
                     ->columns(2),
@@ -679,7 +731,8 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                             ->helperText(fn () => $this->previousValueHelper($this->getInailCalculation(), 'inail_calculated_amount')),
                         TextInput::make('inail.inail_final_amount')->label(__('Final amount (after minimum)'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getInailCalculation(), 'inail_final_amount')),
-                        Textarea::make('inail.adjustment_reason')->label(__('Reason for changes'))->rows(2)->columnSpanFull()
+                        Textarea::make('inail.adjustment_reason')->label(__('Reason for changes'))->rows(2)
+                            ->required(fn (Get $get) => $this->isSectionAdjusted($get, 'inail'))->columnSpanFull()
                             ->helperText(__('Required only if a figure above was changed from its computed value.')),
                     ])
                     ->columns(2),
@@ -689,6 +742,7 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
                         TextInput::make('fattura_tra_privati.total_payment_amount')->label(__('Total stamp duty'))->numeric()->prefix('€')->required()->live()
                             ->helperText(fn () => $this->previousValueHelper($this->getFatturaCalculation(), 'total_payment_amount')),
                         Textarea::make('fattura_tra_privati.adjustment_reason')->label(__('Reason for changes'))->rows(2)
+                            ->required(fn (Get $get) => $this->isSectionAdjusted($get, 'fattura_tra_privati'))
                             ->helperText(__('Required only if the figure above was changed from its computed value.')),
                     ]),
                 Section::make(__('Provisional payment schedule'))

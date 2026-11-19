@@ -180,6 +180,42 @@ class CustomerTaxDashboardTest extends TestCase
         $this->assertEqualsWithDelta($preview['inps']['inps_amount_after_discount'], $installmentsTotal, 0.001);
     }
 
+    public function test_changing_an_inps_figure_requires_the_inps_reason_inline_and_saves_once_given(): void
+    {
+        $this->actingAs($this->admin);
+
+        $component = Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->set('mountedActionsData.0.inps.discount_amount', 100.00)
+            ->callMountedAction()
+            ->assertHasActionErrors(['inps.adjustment_reason' => 'required']);
+
+        $this->assertDatabaseMissing('inps_calculations', ['customer_id' => $this->customer->id, 'tax_year' => 2025]);
+
+        $component
+            ->set('mountedActionsData.0.inps.adjustment_reason', 'Client confirmed the reduction')
+            ->callMountedAction()
+            ->assertHasNoActionErrors();
+
+        $this->assertDatabaseHas('inps_calculations', [
+            'customer_id' => $this->customer->id, 'tax_year' => 2025, 'discount_amount' => 100.00, 'is_manually_adjusted' => true,
+        ]);
+    }
+
+    public function test_unchanged_figures_save_without_any_reason(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(CustomerTaxDashboard::class, ['customer' => $this->customer->id])
+            ->set('selectedYear', 2025)
+            ->mountAction('recalculate')
+            ->callMountedAction()
+            ->assertHasNoActionErrors();
+
+        $this->assertDatabaseHas('inps_calculations', ['customer_id' => $this->customer->id, 'tax_year' => 2025, 'is_manually_adjusted' => false]);
+    }
+
     public function test_changing_tax_due_and_balance_payment_resplits_the_tax_installments(): void
     {
         $this->actingAs($this->admin);
