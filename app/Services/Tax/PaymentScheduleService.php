@@ -445,7 +445,7 @@ class PaymentScheduleService
         $isFixedPlusPercentage = $method === InpsCalculationMethod::FixedPlusPercentage || $method === InpsCalculationMethod::FixedPlusPercentage->value;
 
         if ($isFixedPlusPercentage) {
-            $factor = 1 - (float) ($inps['discount_percentage'] ?? 0) / 100;
+            $factor = InpsCalculationService::afterDiscountFactor((float) ($inps['inps_amount'] ?? 0), $amount, (float) ($inps['discount_percentage'] ?? 0));
             $fixed = round((float) ($inps['fixed_amount'] ?? 0) * $factor, 2);
             $variable = round($amount - $fixed, 2);
 

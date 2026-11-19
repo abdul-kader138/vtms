@@ -192,6 +192,7 @@ class CustomerTaxDashboard extends Page implements HasActions, HasForms
     private function resyncInpsSchedule(Set $set, Get $get): void
     {
         $this->resyncScheduleGroup($set, 'inps', [
+            'inps_amount' => (float) $get('inps.inps_amount'),
             'discount_percentage' => (float) $get('inps.discount_percentage'),
             'inps_amount_after_discount' => (float) $get('inps.inps_amount_after_discount'),
         ]);

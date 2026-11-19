@@ -223,9 +223,24 @@ class InpsCalculationService
     /** The fixed / above-minimum split of the amount actually due (after the reduction). */
     public static function splitAfterDiscount(InpsCalculation $ic): array
     {
-        $factor = 1 - (float) $ic->discount_percentage / 100;
+        $factor = self::afterDiscountFactor((float) $ic->inps_amount, (float) $ic->inps_amount_after_discount, (float) $ic->discount_percentage);
         $fixed = round((float) $ic->fixed_amount * $factor, 2);
 
         return ['fixed' => $fixed, 'variable' => round((float) $ic->inps_amount_after_discount - $fixed, 2)];
+    }
+
+    /**
+     * The share of the gross INPS amount that's still due after the
+     * reduction — net ÷ gross, not 1 − discount_percentage: a percentage
+     * stored to 2 decimals (e.g. one back-derived from a hand-typed
+     * discount amount) drifts by a few cents from the real net, which used
+     * to leave a fixed-only (below-minimale) INPS with a bogus cents-sized
+     * "balance on income above the minimale" installment, or installments
+     * that didn't add up to the net. Falls back to the percentage only
+     * when there's no gross amount to divide by.
+     */
+    public static function afterDiscountFactor(float $inpsAmount, float $afterDiscount, float $discountPercentage): float
+    {
+        return $inpsAmount > 0 ? $afterDiscount / $inpsAmount : 1 - $discountPercentage / 100;
     }
 }

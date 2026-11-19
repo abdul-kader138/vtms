@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services\Tax;
 
+use App\Enums\InpsCalculationMethod;
 use App\Models\Customer;
 use App\Models\DirittoAnnualeBracket;
 use App\Models\InailCalculation;
@@ -178,6 +179,27 @@ class PaymentScheduleServiceTest extends TestCase
 
         $this->assertNull($schedule['inail']);
         $this->assertSame([], $schedule['fattura_tra_privati']);
+    }
+
+    public function test_a_hand_typed_inps_discount_on_fixed_only_contributions_never_adds_a_cents_balance_row(): void
+    {
+        $customer = new Customer(['customer_type' => 'artigiani']);
+
+        // € 1006 off € 4500 back-derives to 22.36%, and € 1000 to 22.22% —
+        // both drift from the real net when applied as a percentage.
+        foreach ([1006.00, 1000.00] as $discountAmount) {
+            $net = 4500.00 - $discountAmount;
+            $rows = $this->service->previewForYear($customer, 2025, ['inps' => [
+                'calculation_method' => InpsCalculationMethod::FixedPlusPercentage,
+                'inps_amount' => 4500.00,
+                'fixed_amount' => 4500.00,
+                'discount_percentage' => round($discountAmount / 4500.00 * 100, 2),
+                'inps_amount_after_discount' => $net,
+            ]])['inps'];
+
+            $this->assertSame(['1', '2', '3', '4'], array_map('strval', array_keys($rows)), "discount € {$discountAmount}");
+            $this->assertEqualsWithDelta($net, array_sum(array_column($rows, 'amount')), 0.001, "discount € {$discountAmount}");
+        }
     }
 
     public function test_schedule_inps_payments_applies_a_per_installment_override(): void
